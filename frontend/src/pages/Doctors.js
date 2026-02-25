@@ -1,0 +1,212 @@
+import React, { useEffect, useState } from 'react';
+import { getDoctors, createDoctor, deleteDoctor, getDoctorPatients, getHospitals } from '../api';
+
+const SPECIALIZATIONS = [
+  'Cardiology', 'Neurology', 'Pulmonology', 'Orthopedics',
+  'Dermatology', 'Pediatrics', 'Oncology', 'General Medicine',
+  'Gastroenterology', 'Endocrinology', 'Nephrology', 'Psychiatry',
+];
+
+const EMPTY = { name: '', specialization: 'Cardiology', phone: '', email: '', hospital_id: '', is_freelancer: false, is_available: true };
+
+export default function Doctors() {
+  const [doctors,     setDoctors]     = useState([]);
+  const [hospitals,   setHospitals]   = useState([]);
+  const [form,        setForm]        = useState(EMPTY);
+  const [showAdd,     setShowAdd]     = useState(false);
+  const [expanded,    setExpanded]    = useState(null);
+  const [patients,    setPatients]    = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState('');
+  const [specFilter,  setSpecFilter]  = useState('');
+
+  const role = localStorage.getItem('role');
+  const canManage = role === 'ADMIN';
+
+  const load = async () => {
+    try {
+      const params = specFilter ? { specialization: specFilter } : {};
+      const [dRes, hRes] = await Promise.all([getDoctors(params), getHospitals()]);
+      setDoctors(dRes.data);
+      setHospitals(hRes.data);
+    } catch { setError('Failed to load doctors'); }
+    finally   { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [specFilter]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    try {
+      await createDoctor({
+        ...form,
+        hospital_id: form.hospital_id ? parseInt(form.hospital_id) : null,
+      });
+      setForm(EMPTY);
+      setShowAdd(false);
+      load();
+    } catch (err) { setError(err.response?.data?.detail || 'Create failed'); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this doctor?')) return;
+    try { await deleteDoctor(id); load(); }
+    catch { setError('Delete failed'); }
+  };
+
+  const togglePatients = async (id) => {
+    if (expanded === id) { setExpanded(null); setPatients([]); return; }
+    try {
+      const res = await getDoctorPatients(id);
+      setPatients(res.data);
+      setExpanded(id);
+    } catch { setError('Failed to load assigned patients'); }
+  };
+
+  return (
+    <div>
+      <div className="page-header">
+        <h1>👨‍⚕️ Doctors</h1>
+        <p>Manage doctors — freelancer & hospital-based</p>
+      </div>
+
+      {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
+
+      <div style={{ display:'flex', gap:10, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
+        {canManage && (
+          <button className="btn btn-primary" onClick={() => setShowAdd(!showAdd)}>
+            {showAdd ? '✕ Cancel' : '+ Add Doctor'}
+          </button>
+        )}
+        <select
+          style={{ background:'#1e293b', border:'1px solid #334155', color:'#e2e8f0',
+                   borderRadius:8, padding:'8px 12px', fontSize:13 }}
+          value={specFilter}
+          onChange={e => setSpecFilter(e.target.value)}>
+          <option value="">All Specializations</option>
+          {SPECIALIZATIONS.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+
+      {canManage && showAdd && (
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div className="card-header"><h2>New Doctor</h2></div>
+          <form onSubmit={handleSubmit}>
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Full Name</label>
+                <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Dr. Jane Smith" />
+              </div>
+              <div className="form-group">
+                <label>Specialization</label>
+                <select value={form.specialization} onChange={e => setForm({ ...form, specialization: e.target.value })}>
+                  {SPECIALIZATIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Phone</label>
+                <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+1-555-0100" />
+              </div>
+              <div className="form-group">
+                <label>Email</label>
+                <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="jane@hospital.com" />
+              </div>
+              <div className="form-group">
+                <label>Hospital</label>
+                <select value={form.hospital_id} onChange={e => setForm({ ...form, hospital_id: e.target.value })}>
+                  <option value="">— None (Freelancer) —</option>
+                  {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <input type="checkbox" checked={form.is_freelancer}
+                    onChange={e => setForm({ ...form, is_freelancer: e.target.checked })} />
+                  Freelancer
+                </label>
+              </div>
+            </div>
+            <div className="form-actions">
+              <button type="submit" className="btn btn-primary">Save Doctor</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-header"><h2>All Doctors ({doctors.length})</h2></div>
+        {loading ? <div className="spinner" /> : (
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>Name</th><th>Specialization</th><th>Hospital</th>
+                <th>Type</th><th>Status</th><th>Phone</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {doctors.length === 0 && (
+                <tr><td colSpan={8} className="empty-state">No doctors found.</td></tr>
+              )}
+              {doctors.map(d => (
+                <React.Fragment key={d.doctor_id}>
+                  <tr>
+                    <td>#{d.doctor_id}</td>
+                    <td><strong>{d.name}</strong></td>
+                    <td>
+                      {d.specialization ? (
+                        <span className="badge badge-blue">{d.specialization}</span>
+                      ) : '—'}
+                    </td>
+                    <td>{d.hospital_name || '—'}</td>
+                    <td>
+                      {d.is_freelancer
+                        ? <span className="badge badge-green">🟢 Freelancer</span>
+                        : <span className="badge" style={{ background:'#334155', color:'#94a3b8' }}>Hospital</span>
+                      }
+                    </td>
+                    <td>
+                      {d.is_available
+                        ? <span style={{ color:'#34d399' }}>Available</span>
+                        : <span style={{ color:'#f87171' }}>Unavailable</span>
+                      }
+                    </td>
+                    <td>{d.phone || '—'}</td>
+                    <td style={{ display:'flex', gap:6 }}>
+                      <button className="btn btn-primary btn-sm" onClick={() => togglePatients(d.doctor_id)}>
+                        {expanded === d.doctor_id ? '▲ Hide' : '▼ Patients'}
+                      </button>
+                      {canManage && (
+                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(d.doctor_id)}>🗑</button>
+                      )}
+                    </td>
+                  </tr>
+                  {expanded === d.doctor_id && (
+                    <tr>
+                      <td colSpan={8} style={{ background:'#1e293b', padding:16 }}>
+                        {patients.length === 0 ? (
+                          <em style={{ color:'#94a3b8' }}>No patients assigned to this doctor.</em>
+                        ) : (
+                          <table style={{ marginBottom:0 }}>
+                            <thead><tr><th>Patient</th><th>Age</th><th>Room</th></tr></thead>
+                            <tbody>
+                              {patients.map(p => (
+                                <tr key={p.patient_id}>
+                                  <td>{p.name}</td><td>{p.age}</td><td>{p.room_number}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}

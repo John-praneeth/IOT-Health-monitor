@@ -1,0 +1,53 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start Backend",
+			"type": "shell",
+			"command": "source venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8000",
+			"isBackground": true,
+			"options": {
+				"cwd": "${workspaceFolder}/backend"
+			},
+			"problemMatcher": [
+				{
+					"pattern": {
+						"regexp": "^(.*)$",
+						"file": 1,
+						"location": 2,
+						"message": 3
+					},
+					"background": {
+						"activeOnStart": true,
+						"beginsPattern": "^INFO:.*Started server process",
+						"endsPattern": "^INFO:.*Application startup complete"
+					}
+				}
+			]
+		},
+		{
+			"label": "Start Frontend",
+			"type": "shell",
+			"command": "npm start",
+			"isBackground": true,
+			"options": {
+				"cwd": "${workspaceFolder}/frontend"
+			},
+			"problemMatcher": [
+				{
+					"pattern": {
+						"regexp": "^(.*)$",
+						"file": 1,
+						"location": 2,
+						"message": 3
+					},
+					"background": {
+						"activeOnStart": true,
+						"beginsPattern": "^> start",
+						"endsPattern": "webpack compiled|Compiled successfully"
+					}
+				}
+			]
+		}
+	]
+}
