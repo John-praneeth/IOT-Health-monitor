@@ -16,6 +16,10 @@ if not DATABASE_URL:
         "Create a backend/.env file with: DATABASE_URL=postgresql://user:pass@localhost:5432/patient_monitor"
     )
 
+# Railway provides postgres:// but SQLAlchemy needs postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,          # verify connections before use
