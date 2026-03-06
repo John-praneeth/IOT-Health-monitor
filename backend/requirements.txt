@@ -1,3 +1,4 @@
+# ── Core ──────────────────────────────────────────────────────────────────────
 fastapi
 uvicorn[standard]
 sqlalchemy
@@ -7,4 +8,12 @@ python-dotenv
 bcrypt
 python-jose[cryptography]
 httpx
+
+# ── Rate Limiting ─────────────────────────────────────────────────────────────
+slowapi
+
+# ── Redis (WebSocket pub/sub) ─────────────────────────────────────────────────
+redis
+
+# ── Testing ───────────────────────────────────────────────────────────────────
 pytest

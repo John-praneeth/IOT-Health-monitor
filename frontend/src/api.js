@@ -1,8 +1,6 @@
 import axios from 'axios';
 
-const API = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000'
-});
+const API = axios.create({ baseURL: 'http://localhost:8000' });
 
 // ── Token interceptor: attach JWT to every request if available ──
 API.interceptors.request.use((config) => {
@@ -12,6 +10,19 @@ API.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// ── Error interceptor: normalize backend error format ──
+// Backend returns { success: false, error: { message: "..." } }
+// but frontend expects err.response.data.detail — bridge both.
+API.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.data?.error?.message && !error.response.data.detail) {
+      error.response.data.detail = error.response.data.error.message;
+    }
+    return Promise.reject(error);
+  }
+);
 
 // ── Auth ──────────────────────────────────────────────────
 export const register         = (data) => API.post('/auth/register', data);
@@ -68,5 +79,14 @@ export const getEscalations = (params={})    => API.get('/escalations', { params
 
 // ── Audit Logs ────────────────────────────────────────────
 export const getAuditLogs  = (params={})     => API.get('/audit-logs', { params });
+
+// ── WhatsApp Notifications (GREEN-API) ───────────────────────────────────────
+export const getWhatsAppConfig   = ()       => API.get('/whatsapp/config');
+export const pauseWhatsAppAlerts = ()       => API.post('/whatsapp/alerts/pause');
+export const resumeWhatsAppAlerts= ()       => API.post('/whatsapp/alerts/resume');
+export const getWhatsAppLogs     = (p={})   => API.get('/whatsapp/logs', { params: p });
+
+// ── Health Checks ─────────────────────────────────────────────────────────────
+export const getHealthFull = () => API.get('/health/full');
 
 export default API;

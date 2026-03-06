@@ -8,6 +8,8 @@ import Doctors from './pages/Doctors';
 import Nurses from './pages/Nurses';
 import Hospitals from './pages/Hospitals';
 import AuditLogs from './pages/AuditLogs';
+import WhatsAppConfig from './pages/WhatsAppConfig';
+import SystemStatus from './pages/SystemStatus';
 import Login from './pages/Login';
 import './App.css';
 
@@ -64,6 +66,8 @@ export default function App() {
             {user.role === 'ADMIN' && (
               <>
                 <NavLink to="/hospitals"   className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>🏢 Hospitals</NavLink>
+                <NavLink to="/whatsapp"    className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>📱 WhatsApp</NavLink>
+                <NavLink to="/status"      className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>�️ System Status</NavLink>
                 <NavLink to="/audit-logs"  className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>📋 Audit Logs</NavLink>
               </>
             )}
@@ -87,6 +91,8 @@ export default function App() {
             <Route path="/vitals"     element={<Vitals />} />
             <Route path="/alerts"     element={<Alerts />} />
             <Route path="/hospitals"  element={<Hospitals />} />
+            <Route path="/whatsapp"   element={<WhatsAppConfig />} />
+            <Route path="/status"     element={<SystemStatus />} />
             <Route path="/audit-logs" element={<AuditLogs />} />
           </Routes>
         </main>

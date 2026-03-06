@@ -16,18 +16,22 @@ export default function Dashboard() {
   const fetchAll = useCallback(async () => {
     try {
       const params = doctorFilter ? { doctor_id: doctorFilter } : {};
-      const [pRes, aRes, dRes, sRes, nRes] = await Promise.all([
+      const [pRes, aRes, dRes, sRes] = await Promise.all([
         getPatients(params),
         getAlerts(doctorFilter ? { doctor_id: doctorFilter } : {}),
         getDoctors(),
         getDashboardStats(),
-        getMyNotifications({ unread_only: false }),
       ]);
       setPatients(pRes.data);
       setAlerts(aRes.data);
       setDoctors(dRes.data);
       setStats(sRes.data);
-      setNotifications(nRes.data);
+
+      // Notifications require auth — fetch separately so a 401 doesn't break everything
+      try {
+        const nRes = await getMyNotifications({ unread_only: false });
+        setNotifications(nRes.data);
+      } catch { /* auth may have expired */ }
 
       const vitalsMap = {};
       await Promise.all(
@@ -41,7 +45,7 @@ export default function Dashboard() {
       setLiveVitals(vitalsMap);
       setLastRefresh(new Date().toLocaleTimeString());
     } catch (err) {
-      console.error(err);
+      console.error('Dashboard fetch error:', err);
     } finally {
       setLoading(false);
     }
@@ -203,12 +207,12 @@ export default function Dashboard() {
             <thead>
               <tr>
                 <th>Patient</th><th>Room</th><th>Hospital</th><th>Doctor</th><th>Nurse</th>
-                <th>Heart Rate</th><th>SpO₂</th><th>Temp (°F)</th><th>BP</th><th>Status</th>
+                <th>Heart Rate</th><th>SpO₂</th><th>Temp (°F)</th><th>Status</th>
               </tr>
             </thead>
             <tbody>
               {patients.length === 0 && (
-                <tr><td colSpan={10} className="empty-state">No patients yet. Add patients first.</td></tr>
+                <tr><td colSpan={9} className="empty-state">No patients yet. Add patients first.</td></tr>
               )}
               {patients.map(p => {
                 const v = liveVitals[p.patient_id];
@@ -224,7 +228,6 @@ export default function Dashboard() {
                     <td>{v ? `${v.heart_rate} bpm` : '—'}</td>
                     <td>{v ? `${v.spo2}%` : '—'}</td>
                     <td>{v ? `${v.temperature}°F` : '—'}</td>
-                    <td>{v ? v.blood_pressure : '—'}</td>
                     <td>
                       {status === 'critical' && <span className="badge badge-red">Critical</span>}
                       {status === 'warning'  && <span className="badge badge-amber">Warning</span>}

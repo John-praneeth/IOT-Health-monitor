@@ -9,7 +9,6 @@ class VitalsBase(BaseModel):
     heart_rate: int
     spo2: int
     temperature: float
-    blood_pressure: str
 
 
 class VitalsCreate(VitalsBase):
@@ -32,6 +31,7 @@ class AlertOut(BaseModel):
     alert_type: str
     status: str
     created_at: Optional[datetime] = None
+    last_checked_at: Optional[datetime] = None
     acknowledged_by: Optional[int] = None
 
     class Config:
@@ -93,7 +93,8 @@ class DoctorBase(BaseModel):
 
 
 class DoctorCreate(DoctorBase):
-    pass
+    username: Optional[str] = None   # if set, a login account is created
+    password: Optional[str] = None   # required when username is provided
 
 
 class DoctorOut(DoctorBase):
@@ -127,7 +128,8 @@ class NurseBase(BaseModel):
 
 
 class NurseCreate(NurseBase):
-    pass
+    username: Optional[str] = None   # if set, a login account is created
+    password: Optional[str] = None   # required when username is provided
 
 
 class NurseOut(NurseBase):
@@ -265,3 +267,72 @@ class DashboardStats(BaseModel):
     pending_alerts: int
     escalated_alerts: int
     acknowledged_alerts: int
+
+
+# ── WhatsApp Configuration ───────────────────────────────────────────────────
+class WhatsAppConfigOut(BaseModel):
+    enabled: bool
+    alerts_paused: bool = False
+    provider: str
+    credentials_set: bool
+    recipients: List[str]
+    recipient_count: int
+    pending_acknowledgements: int = 0
+
+
+class WhatsAppRecipientAdd(BaseModel):
+    phone: str = Field(..., description="Phone number with country code (no + prefix), e.g. 919876543210")
+
+
+class WhatsAppRecipientRemove(BaseModel):
+    phone: str
+
+
+class WhatsAppRecipientsSet(BaseModel):
+    phones: List[str] = Field(..., description="List of phone numbers")
+
+
+class WhatsAppTestMessage(BaseModel):
+    phone: Optional[str] = Field(None, description="Phone number to test (optional, uses first recipient)")
+
+
+class WhatsAppTestResult(BaseModel):
+    success: bool
+    to: Optional[str] = None
+    error: Optional[str] = None
+
+
+# ── WhatsApp Log ──────────────────────────────────────────────────────────────
+class WhatsAppLogOut(BaseModel):
+    log_id: int
+    alert_id: Optional[int] = None
+    recipient: str
+    message_type: str
+    status: str
+    attempts: int
+    error: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    created_at: Optional[datetime] = None
+    sent_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ── Health Check ──────────────────────────────────────────────────────────────
+class HealthDetail(BaseModel):
+    status: str
+    detail: Optional[str] = None
+
+
+class HealthCheckOut(BaseModel):
+    status: str
+    db: Optional[HealthDetail] = None
+    redis: Optional[HealthDetail] = None
+    whatsapp: Optional[HealthDetail] = None
+
+
+# ── Pagination Meta ───────────────────────────────────────────────────────────
+class PaginationParams(BaseModel):
+    limit: int = 50
+    offset: int = 0

@@ -166,12 +166,12 @@ export default function Vitals() {
             <thead>
               <tr>
                 <th>Time</th><th>Patient</th><th>Heart Rate</th>
-                <th>SpO₂</th><th>Temp (°F)</th><th>Blood Pressure</th><th>Status</th>
+                <th>SpO₂</th><th>Temp (°F)</th><th>Status</th>
               </tr>
             </thead>
             <tbody>
               {vitals.length === 0 && (
-                <tr><td colSpan={7} className="empty-state">No vitals yet. Start the scheduler.</td></tr>
+                <tr><td colSpan={6} className="empty-state">No vitals yet. Start the scheduler.</td></tr>
               )}
               {vitals.map(v => (
                 <tr key={v.vital_id} className={rowClass(v)}>
@@ -186,7 +186,6 @@ export default function Vitals() {
                   <td style={{ color: (v.temperature > 101 || v.temperature < 96) ? '#fbbf24' : '#e2e8f0' }}>
                     {v.temperature}°F
                   </td>
-                  <td>{v.blood_pressure}</td>
                   <td>
                     {rowClass(v) === 'vital-critical' && <span className="badge badge-red">Critical</span>}
                     {rowClass(v) === 'vital-warning'  && <span className="badge badge-amber">Warning</span>}

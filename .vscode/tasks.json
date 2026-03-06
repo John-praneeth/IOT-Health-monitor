@@ -48,6 +48,16 @@
 					}
 				}
 			]
+		},
+		{
+			"label": "Start Scheduler",
+			"type": "shell",
+			"command": "source venv/bin/activate && python scheduler.py",
+			"isBackground": true,
+			"options": {
+				"cwd": "${workspaceFolder}/backend"
+			},
+			"problemMatcher": []
 		}
 	]
 }

@@ -1,6 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { login, registerDoctor, registerNurse, getHospitals } from '../api';
 
+const COUNTRY_CODES = [
+  { code: '91',  label: '🇮🇳 +91  India' },
+  { code: '1',   label: '🇺🇸 +1   USA' },
+  { code: '44',  label: '🇬🇧 +44  UK' },
+  { code: '971', label: '🇦🇪 +971 UAE' },
+  { code: '966', label: '🇸🇦 +966 Saudi' },
+  { code: '61',  label: '🇦🇺 +61  Australia' },
+  { code: '49',  label: '🇩🇪 +49  Germany' },
+  { code: '33',  label: '🇫🇷 +33  France' },
+  { code: '81',  label: '🇯🇵 +81  Japan' },
+  { code: '86',  label: '🇨🇳 +86  China' },
+  { code: '82',  label: '🇰🇷 +82  S. Korea' },
+  { code: '55',  label: '🇧🇷 +55  Brazil' },
+  { code: '7',   label: '🇷🇺 +7   Russia' },
+  { code: '27',  label: '🇿🇦 +27  S. Africa' },
+  { code: '65',  label: '🇸🇬 +65  Singapore' },
+  { code: '60',  label: '🇲🇾 +60  Malaysia' },
+  { code: '63',  label: '🇵🇭 +63  Philippines' },
+  { code: '62',  label: '🇮🇩 +62  Indonesia' },
+  { code: '234', label: '🇳🇬 +234 Nigeria' },
+  { code: '254', label: '🇰🇪 +254 Kenya' },
+  { code: '92',  label: '🇵🇰 +92  Pakistan' },
+  { code: '880', label: '🇧🇩 +880 Bangladesh' },
+  { code: '94',  label: '🇱🇰 +94  Sri Lanka' },
+  { code: '977', label: '🇳🇵 +977 Nepal' },
+];
+
 const SPECIALIZATIONS = [
   'Cardiology', 'Neurology', 'Pulmonology', 'Orthopedics',
   'Dermatology', 'Pediatrics', 'Oncology', 'General Medicine',
@@ -17,6 +44,8 @@ export default function Login({ onLogin }) {
   const [hospitals, setHospitals] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [doctorCountryCode, setDoctorCountryCode] = useState('91');
+  const [nurseCountryCode, setNurseCountryCode] = useState('91');
 
   // Login form
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
@@ -52,8 +81,10 @@ export default function Login({ onLogin }) {
     e.preventDefault();
     setError(''); setLoading(true);
     try {
+      const cleanPhone = doctorForm.phone.replace(/[^0-9]/g, '').replace(/^0+/, '');
       const payload = {
         ...doctorForm,
+        phone: cleanPhone ? doctorCountryCode + cleanPhone : '',
         hospital_id: doctorForm.hospital_id ? parseInt(doctorForm.hospital_id) : null,
       };
       const res = await registerDoctor(payload);
@@ -67,8 +98,10 @@ export default function Login({ onLogin }) {
     e.preventDefault();
     setError(''); setLoading(true);
     try {
+      const cleanPhone = nurseForm.phone.replace(/[^0-9]/g, '').replace(/^0+/, '');
       const payload = {
         ...nurseForm,
+        phone: cleanPhone ? nurseCountryCode + cleanPhone : '',
         hospital_id: nurseForm.hospital_id ? parseInt(nurseForm.hospital_id) : null,
       };
       const res = await registerNurse(payload);
@@ -159,13 +192,24 @@ export default function Login({ onLogin }) {
               {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}
             </select>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <input placeholder="Phone" value={doctorForm.phone}
-                onChange={e => setDoctorForm({ ...doctorForm, phone: e.target.value })}
-                style={inputStyle} />
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
+                <select value={doctorCountryCode} onChange={e => setDoctorCountryCode(e.target.value)}
+                  style={{ ...inputStyle, width: 'auto', minWidth: 0, flex: '0 0 auto', marginBottom: 0 }}>
+                  {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+                </select>
+                <input placeholder="Phone number" value={doctorForm.phone}
+                  onChange={e => setDoctorForm({ ...doctorForm, phone: e.target.value.replace(/[^0-9]/g, '') })}
+                  style={{ ...inputStyle, width: 'auto', flex: 1, minWidth: 0, marginBottom: 0 }} />
+              </div>
               <input placeholder="Email" type="email" value={doctorForm.email}
                 onChange={e => setDoctorForm({ ...doctorForm, email: e.target.value })}
                 style={inputStyle} />
             </div>
+            {doctorForm.phone.trim() && (
+              <div style={{ color: '#64748b', fontSize: 11, marginBottom: 8, fontFamily: 'monospace' }}>
+                → {doctorCountryCode}{doctorForm.phone.trim().replace(/^0+/, '')}
+              </div>
+            )}
             <label style={{ color: '#94a3b8', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <input type="checkbox" checked={doctorForm.is_freelancer}
                 onChange={e => setDoctorForm({ ...doctorForm, is_freelancer: e.target.checked })} />
@@ -206,13 +250,24 @@ export default function Login({ onLogin }) {
               {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}
             </select>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <input placeholder="Phone" value={nurseForm.phone}
-                onChange={e => setNurseForm({ ...nurseForm, phone: e.target.value })}
-                style={inputStyle} />
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
+                <select value={nurseCountryCode} onChange={e => setNurseCountryCode(e.target.value)}
+                  style={{ ...inputStyle, width: 'auto', minWidth: 0, flex: '0 0 auto', marginBottom: 0 }}>
+                  {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+                </select>
+                <input placeholder="Phone number" value={nurseForm.phone}
+                  onChange={e => setNurseForm({ ...nurseForm, phone: e.target.value.replace(/[^0-9]/g, '') })}
+                  style={{ ...inputStyle, width: 'auto', flex: 1, minWidth: 0, marginBottom: 0 }} />
+              </div>
               <input placeholder="Email" type="email" value={nurseForm.email}
                 onChange={e => setNurseForm({ ...nurseForm, email: e.target.value })}
                 style={inputStyle} />
             </div>
+            {nurseForm.phone.trim() && (
+              <div style={{ color: '#64748b', fontSize: 11, marginBottom: 8, fontFamily: 'monospace' }}>
+                → {nurseCountryCode}{nurseForm.phone.trim().replace(/^0+/, '')}
+              </div>
+            )}
             <button type="submit" disabled={loading} style={btnStyle}>
               {loading ? '...' : 'Register as Nurse'}
             </button>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getAlerts, acknowledgeAlert, getPatients, getDoctors } from '../api';
+import { getAlerts, acknowledgeAlert, getPatients, getDoctors, getWhatsAppConfig } from '../api';
 
 export default function Alerts() {
   const [alerts,      setAlerts]      = useState([]);
@@ -9,6 +9,7 @@ export default function Alerts() {
   const [doctorFilter, setDoctorFilter] = useState('');    // doctor_id
   const [loading,     setLoading]     = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [whatsappStatus, setWhatsappStatus] = useState(null);
 
   const role = localStorage.getItem('role');
   const canAcknowledge = role === 'ADMIN' || role === 'DOCTOR';
@@ -34,8 +35,12 @@ export default function Alerts() {
   useEffect(() => {
     load();
     const id = setInterval(load, 5000);
+    // Load WhatsApp status once
+    if (role === 'ADMIN') {
+      getWhatsAppConfig().then(res => setWhatsappStatus(res.data)).catch(() => {});
+    }
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, role]);
 
   const handleAck = async (alertId) => {
     try {
@@ -78,6 +83,24 @@ export default function Alerts() {
             <span className="live-dot" />
             AUTO-REFRESH {lastRefresh && `· ${lastRefresh}`}
           </span>
+          {whatsappStatus && (
+            <span style={{
+              marginLeft: 12,
+              padding: '3px 10px',
+              borderRadius: 12,
+              fontSize: 11,
+              fontWeight: 600,
+              background: whatsappStatus.enabled && whatsappStatus.recipient_count > 0
+                ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
+              color: whatsappStatus.enabled && whatsappStatus.recipient_count > 0
+                ? '#6ee7b7' : '#fca5a5',
+              border: `1px solid ${whatsappStatus.enabled && whatsappStatus.recipient_count > 0
+                ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+            }}>
+              📱 WhatsApp {whatsappStatus.enabled && whatsappStatus.recipient_count > 0 ? 'Active' : 'Inactive'}
+              {whatsappStatus.recipient_count > 0 && ` · ${whatsappStatus.recipient_count} recipient${whatsappStatus.recipient_count > 1 ? 's' : ''}`}
+            </span>
+          )}
         </p>
       </div>
 

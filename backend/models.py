@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, TIMESTAMP, func, CheckConstraint
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, TIMESTAMP, Index, func, CheckConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -28,6 +28,7 @@ class Doctor(Base):
     email          = Column(String(100))
     is_freelancer  = Column(Boolean, default=False)
     is_available   = Column(Boolean, default=True)
+    is_active      = Column(Boolean, default=True, nullable=False)
 
     hospital = relationship("Hospital", back_populates="doctors")
     patients = relationship("Patient", back_populates="doctor")
@@ -42,6 +43,7 @@ class Nurse(Base):
     hospital_id = Column(Integer, ForeignKey("hospitals.hospital_id"), nullable=True)
     phone       = Column(String(20))
     email       = Column(String(100))
+    is_active   = Column(Boolean, default=True, nullable=False)
 
     hospital = relationship("Hospital", back_populates="nurses")
     patients = relationship("Patient", back_populates="nurse")
@@ -57,6 +59,7 @@ class Patient(Base):
     hospital_id     = Column(Integer, ForeignKey("hospitals.hospital_id"), nullable=True)
     assigned_doctor = Column(Integer, ForeignKey("doctors.doctor_id"), nullable=True)
     assigned_nurse  = Column(Integer, ForeignKey("nurses.nurse_id"), nullable=True)
+    is_active       = Column(Boolean, default=True, nullable=False)
 
     hospital = relationship("Hospital", back_populates="patients")
     doctor   = relationship("Doctor",   back_populates="patients")
@@ -71,8 +74,11 @@ class Vitals(Base):
     heart_rate     = Column(Integer)
     spo2           = Column(Integer)
     temperature    = Column(Float)
-    blood_pressure = Column(String(20))
     timestamp      = Column(TIMESTAMP, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_vitals_patient_ts", "patient_id", timestamp.desc()),
+    )
 
 
 class Alert(Base):
@@ -84,10 +90,17 @@ class Alert(Base):
     alert_type      = Column(String(50))
     status          = Column(String(20), default="PENDING")
     created_at      = Column(TIMESTAMP, server_default=func.now())
+    last_checked_at = Column(TIMESTAMP, nullable=True)
     acknowledged_by = Column(Integer, nullable=True)
+    acknowledged_at = Column(TIMESTAMP, nullable=True)
 
     escalations   = relationship("AlertEscalation", back_populates="alert")
     notifications = relationship("AlertNotification", back_populates="alert")
+
+    __table_args__ = (
+        Index("idx_alerts_status", "status"),
+        Index("idx_alerts_patient", "patient_id"),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -158,3 +171,49 @@ class ChatMessage(Base):
     created_at      = Column(TIMESTAMP, server_default=func.now())
 
     patient = relationship("Patient")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  v5.0 — ENTERPRISE TABLES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class WhatsAppLog(Base):
+    """Tracks every WhatsApp notification attempt for reliability."""
+    __tablename__ = "whatsapp_logs"
+
+    log_id          = Column(Integer, primary_key=True, index=True)
+    alert_id        = Column(Integer, ForeignKey("alerts.alert_id"), nullable=True)
+    recipient       = Column(String(20), nullable=False)
+    message_type    = Column(String(20), nullable=False)  # alert / escalation / test
+    status          = Column(String(20), default="PENDING")  # PENDING / SENT / FAILED
+    attempts        = Column(Integer, default=0)
+    error           = Column(String(500), nullable=True)
+    idempotency_key = Column(String(100), nullable=True, unique=True)
+    created_at      = Column(TIMESTAMP, server_default=func.now())
+    sent_at         = Column(TIMESTAMP, nullable=True)
+
+    __table_args__ = (
+        Index("idx_wa_log_alert", "alert_id"),
+        Index("idx_wa_log_status", "status"),
+        Index("idx_wa_log_idempotency", "idempotency_key"),
+    )
+
+
+class SLARecord(Base):
+    """Tracks doctor response times and SLA breaches."""
+    __tablename__ = "sla_records"
+
+    sla_id              = Column(Integer, primary_key=True, index=True)
+    alert_id            = Column(Integer, ForeignKey("alerts.alert_id"), unique=True, nullable=False)
+    patient_id          = Column(Integer, ForeignKey("patients.patient_id"), nullable=False)
+    response_time_seconds = Column(Integer, nullable=True)
+    breached            = Column(Boolean, default=False)
+    created_at          = Column(TIMESTAMP, server_default=func.now())
+
+    alert   = relationship("Alert")
+    patient = relationship("Patient")
+
+    __table_args__ = (
+        Index("idx_sla_breached", "breached"),
+    )
+

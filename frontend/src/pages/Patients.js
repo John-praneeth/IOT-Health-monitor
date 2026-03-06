@@ -36,6 +36,14 @@ export default function Patients() {
 
   useEffect(() => { load(); }, []);
 
+  // Filter doctors/nurses by selected hospital in the Add Patient form
+  const formDoctors = form.hospital_id
+    ? doctors.filter(d => String(d.hospital_id) === String(form.hospital_id) || d.is_freelancer)
+    : doctors;
+  const formNurses = form.hospital_id
+    ? nurses.filter(n => String(n.hospital_id) === String(form.hospital_id))
+    : nurses;
+
   // Filter doctors by specialization for the assign dropdown
   const filteredDoctors = specFilter
     ? doctors.filter(d => d.specialization === specFilter)
@@ -128,23 +136,23 @@ export default function Patients() {
               ))}
               <div className="form-group">
                 <label>Hospital</label>
-                <select value={form.hospital_id} onChange={e => setForm({ ...form, hospital_id: e.target.value })}>
+                <select value={form.hospital_id} onChange={e => setForm({ ...form, hospital_id: e.target.value, assigned_doctor: '', assigned_nurse: '' })}>
                   <option value="">— None —</option>
                   {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label>Assign Doctor</label>
+                <label>Assign Doctor {form.hospital_id && <span style={{ color:'#64748b', fontWeight:400, fontSize:11 }}>(filtered by hospital)</span>}</label>
                 <select value={form.assigned_doctor} onChange={e => setForm({ ...form, assigned_doctor: e.target.value })}>
                   <option value="">— None —</option>
-                  {doctors.map(d => <option key={d.doctor_id} value={d.doctor_id}>{d.name} ({d.specialization || 'N/A'})</option>)}
+                  {formDoctors.map(d => <option key={d.doctor_id} value={d.doctor_id}>{d.name} ({d.specialization || 'N/A'})</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label>Assign Nurse</label>
+                <label>Assign Nurse {form.hospital_id && <span style={{ color:'#64748b', fontWeight:400, fontSize:11 }}>(filtered by hospital)</span>}</label>
                 <select value={form.assigned_nurse} onChange={e => setForm({ ...form, assigned_nurse: e.target.value })}>
                   <option value="">— None —</option>
-                  {nurses.map(n => <option key={n.nurse_id} value={n.nurse_id}>{n.name}</option>)}
+                  {formNurses.map(n => <option key={n.nurse_id} value={n.nurse_id}>{n.name}</option>)}
                 </select>
               </div>
             </div>
@@ -256,7 +264,7 @@ export default function Patients() {
               <button onClick={() => setVitalsModal(null)} style={{ background:'none', border:'none', color:'#94a3b8', fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
             {vitalsModal.vitals ? (
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
                 <div style={{ background:'#0f172a', borderRadius:10, padding:14, textAlign:'center' }}>
                   <div style={{ fontSize:12, color:'#94a3b8' }}>Heart Rate</div>
                   <div style={{ fontSize:24, fontWeight:700, color: vitalsModal.vitals.heart_rate > 110 || vitalsModal.vitals.heart_rate < 50 ? '#f87171' : '#34d399' }}>
@@ -273,12 +281,6 @@ export default function Patients() {
                   <div style={{ fontSize:12, color:'#94a3b8' }}>Temperature</div>
                   <div style={{ fontSize:24, fontWeight:700, color: vitalsModal.vitals.temperature > 101 ? '#fbbf24' : '#e2e8f0' }}>
                     {vitalsModal.vitals.temperature}<span style={{ fontSize:12 }}>°F</span>
-                  </div>
-                </div>
-                <div style={{ background:'#0f172a', borderRadius:10, padding:14, textAlign:'center' }}>
-                  <div style={{ fontSize:12, color:'#94a3b8' }}>Blood Pressure</div>
-                  <div style={{ fontSize:20, fontWeight:700, color:'#e2e8f0' }}>
-                    {vitalsModal.vitals.blood_pressure}
                   </div>
                 </div>
               </div>

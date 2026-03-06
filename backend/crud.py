@@ -2,13 +2,14 @@
 crud.py  –  Database operations for the Patient Monitor system.
 """
 
+import os
 import logging
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import func as sqlfunc
 
 import models
 import schemas
+import whatsapp_notifier
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +24,11 @@ def write_audit(db: Session, action: str, entity: str, entity_id: int = None, us
     db.commit()
 
 
-def get_audit_logs(db: Session, entity: str = None, limit: int = 200):
+def get_audit_logs(db: Session, entity: str = None, limit: int = 200, offset: int = 0):
     q = db.query(models.AuditLog)
     if entity:
         q = q.filter(models.AuditLog.entity == entity)
-    return q.order_by(models.AuditLog.timestamp.desc()).limit(limit).all()
+    return q.order_by(models.AuditLog.timestamp.desc()).offset(offset).limit(limit).all()
 
 
 # ── Vitals ────────────────────────────────────────────────────────────────────
@@ -42,14 +43,14 @@ def create_vitals(db: Session, vital):
     return db_vital
 
 
-def get_vitals(db: Session, patient_id: int = None, doctor_id: int = None, limit: int = 50):
+def get_vitals(db: Session, patient_id: int = None, doctor_id: int = None, limit: int = 50, offset: int = 0):
     q = db.query(models.Vitals)
     if patient_id:
         q = q.filter(models.Vitals.patient_id == patient_id)
     if doctor_id:
         patient_ids = [p.patient_id for p in get_patients_by_doctor(db, doctor_id)]
         q = q.filter(models.Vitals.patient_id.in_(patient_ids))
-    return q.order_by(models.Vitals.timestamp.desc()).limit(limit).all()
+    return q.order_by(models.Vitals.timestamp.desc()).offset(offset).limit(limit).all()
 
 
 def get_latest_vital(db: Session, patient_id: int):
@@ -63,19 +64,22 @@ def get_latest_vital(db: Session, patient_id: int):
 
 # ── Alerts ────────────────────────────────────────────────────────────────────
 def create_alert(db: Session, patient_id: int, vital_id: int, alert_type: str):
-    # De-duplicate: skip if a PENDING alert of the same type already exists
+    # De-duplicate: skip if a PENDING or ESCALATED alert of the same type already exists
     duplicate = (
         db.query(models.Alert)
         .filter(
             models.Alert.patient_id == patient_id,
             models.Alert.alert_type == alert_type,
-            models.Alert.status == "PENDING",
+            models.Alert.status.in_(["PENDING", "ESCALATED"]),
         )
         .first()
     )
     if duplicate:
-        logger.debug("Duplicate alert suppressed: %s for patient %s", alert_type, patient_id)
-        return duplicate
+        # Update last_checked_at to track that abnormal vitals are still occurring
+        duplicate.last_checked_at = datetime.now()
+        db.commit()
+        logger.debug("Duplicate alert suppressed: %s for patient %s (updated last_checked_at)", alert_type, patient_id)
+        return None  # Return None so callers know this is a duplicate, not a new alert
 
     new_alert = models.Alert(
         patient_id=patient_id,
@@ -91,14 +95,14 @@ def create_alert(db: Session, patient_id: int, vital_id: int, alert_type: str):
     return new_alert
 
 
-def get_alerts(db: Session, status: str = None, doctor_id: int = None, limit: int = 100):
+def get_alerts(db: Session, status: str = None, doctor_id: int = None, limit: int = 100, offset: int = 0):
     q = db.query(models.Alert)
     if status:
         q = q.filter(models.Alert.status == status)
     if doctor_id:
         patient_ids = [p.patient_id for p in get_patients_by_doctor(db, doctor_id)]
         q = q.filter(models.Alert.patient_id.in_(patient_ids))
-    return q.order_by(models.Alert.created_at.desc()).limit(limit).all()
+    return q.order_by(models.Alert.created_at.desc()).offset(offset).limit(limit).all()
 
 
 def acknowledge_alert(db: Session, alert_id: int, acknowledged_by: int):
@@ -106,6 +110,7 @@ def acknowledge_alert(db: Session, alert_id: int, acknowledged_by: int):
     if alert:
         alert.status = "ACKNOWLEDGED"
         alert.acknowledged_by = acknowledged_by
+        alert.acknowledged_at = datetime.now()
         db.commit()
         db.refresh(alert)
     return alert
@@ -144,18 +149,30 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
             if assigned_doctor:
                 specialization = assigned_doctor.specialization
 
-        # Find same-specialization doctors (exclude the assigned one)
+        # Find same-specialization doctors at the SAME hospital (exclude the assigned one)
         same_spec_doctors = []
-        if specialization:
+        if specialization and patient.hospital_id:
             same_spec_doctors = (
                 db.query(models.Doctor)
                 .filter(
                     models.Doctor.specialization == specialization,
                     models.Doctor.is_available == True,
                     models.Doctor.doctor_id != (patient.assigned_doctor or -1),
+                    models.Doctor.hospital_id == patient.hospital_id,
                 )
                 .all()
             )
+            # If no doctors found at same hospital, try any doctor with matching hospital
+            if not same_spec_doctors:
+                same_spec_doctors = (
+                    db.query(models.Doctor)
+                    .filter(
+                        models.Doctor.is_available == True,
+                        models.Doctor.doctor_id != (patient.assigned_doctor or -1),
+                        models.Doctor.hospital_id == patient.hospital_id,
+                    )
+                    .all()
+                )
 
         # Create escalation records for each same-spec doctor
         for doc in same_spec_doctors:
@@ -204,18 +221,48 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
                     )
                     db.add(notif)
 
+        # Send WhatsApp escalation notification to escalated doctors + assigned staff
+        try:
+            escalation_recipients = []
+            # Add same-spec doctors' phones (only valid Indian numbers)
+            for doc in same_spec_doctors:
+                if doc.phone:
+                    phone = doc.phone.strip().lstrip("+")
+                    if phone.startswith("91") and len(phone) >= 12:
+                        escalation_recipients.append(phone)
+            # Add assigned doctor's phone
+            if assigned_doctor and assigned_doctor.phone:
+                phone = assigned_doctor.phone.strip().lstrip("+")
+                if phone.startswith("91") and len(phone) >= 12:
+                    escalation_recipients.append(phone)
+            # De-duplicate
+            escalation_recipients = list(dict.fromkeys(escalation_recipients))
+
+            if escalation_recipients:
+                whatsapp_notifier.send_escalation_notification(
+                    alert_type=alert.alert_type,
+                    patient_name=patient.name,
+                    patient_id=patient.patient_id,
+                    room_number=patient.room_number,
+                    recipients=escalation_recipients,
+                    alert_id=alert.alert_id,
+                )
+        except Exception as e:
+            logger.error("WhatsApp escalation notification failed for alert %s: %s", alert.alert_id, e)
+
     if escalated:
         db.commit()
+
     return escalated
 
 
-def get_escalations(db: Session, alert_id: int = None, doctor_id: int = None, limit: int = 100):
+def get_escalations(db: Session, alert_id: int = None, doctor_id: int = None, limit: int = 100, offset: int = 0):
     q = db.query(models.AlertEscalation)
     if alert_id:
         q = q.filter(models.AlertEscalation.alert_id == alert_id)
     if doctor_id:
         q = q.filter(models.AlertEscalation.escalated_to_doctor == doctor_id)
-    return q.order_by(models.AlertEscalation.escalated_at.desc()).limit(limit).all()
+    return q.order_by(models.AlertEscalation.escalated_at.desc()).offset(offset).limit(limit).all()
 
 
 # ── Notifications ─────────────────────────────────────────────────────────────
@@ -259,25 +306,31 @@ def _enrich_patient(patient):
     return patient
 
 
-def get_patients(db: Session, doctor_id: int = None, nurse_id: int = None):
+def get_patients(db: Session, doctor_id: int = None, nurse_id: int = None, limit: int = 200, offset: int = 0):
     q = db.query(models.Patient)
     if doctor_id:
         q = q.filter(models.Patient.assigned_doctor == doctor_id)
     if nurse_id:
         q = q.filter(models.Patient.assigned_nurse == nurse_id)
-    return [_enrich_patient(p) for p in q.all()]
+    return [_enrich_patient(p) for p in q.offset(offset).limit(limit).all()]
 
 
 def get_patients_by_doctor(db: Session, doctor_id: int):
-    return db.query(models.Patient).filter(models.Patient.assigned_doctor == doctor_id).all()
+    return db.query(models.Patient).filter(
+        models.Patient.assigned_doctor == doctor_id,
+    ).all()
 
 
 def get_patients_by_nurse(db: Session, nurse_id: int):
-    return db.query(models.Patient).filter(models.Patient.assigned_nurse == nurse_id).all()
+    return db.query(models.Patient).filter(
+        models.Patient.assigned_nurse == nurse_id,
+    ).all()
 
 
 def get_patient(db: Session, patient_id: int):
-    p = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+    p = db.query(models.Patient).filter(
+        models.Patient.patient_id == patient_id,
+    ).first()
     return _enrich_patient(p) if p else None
 
 
@@ -291,11 +344,14 @@ def create_patient(db: Session, patient: schemas.PatientCreate):
 
 
 def delete_patient(db: Session, patient_id: int):
+    """Hard delete: physically remove patient and all their vitals from the DB."""
     patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
     if patient:
+        # Delete all vitals for this patient first (FK constraint)
+        db.query(models.Vitals).filter(models.Vitals.patient_id == patient_id).delete()
+        write_audit(db, "DELETE", "patient", entity_id=patient_id)
         db.delete(patient)
         db.commit()
-        write_audit(db, "DELETE", "patient", entity_id=patient_id)
     return patient
 
 
@@ -331,32 +387,45 @@ def _enrich_doctor(doctor):
     return doctor
 
 
-def get_doctors(db: Session, hospital_id: int = None, specialization: str = None):
+def get_doctors(db: Session, hospital_id: int = None, specialization: str = None, limit: int = 200, offset: int = 0):
     q = db.query(models.Doctor)
     if hospital_id:
         q = q.filter(models.Doctor.hospital_id == hospital_id)
     if specialization:
         q = q.filter(models.Doctor.specialization == specialization)
-    return [_enrich_doctor(d) for d in q.all()]
+    return [_enrich_doctor(d) for d in q.offset(offset).limit(limit).all()]
 
 
 def get_doctor(db: Session, doctor_id: int):
-    d = db.query(models.Doctor).filter(models.Doctor.doctor_id == doctor_id).first()
+    d = db.query(models.Doctor).filter(
+        models.Doctor.doctor_id == doctor_id,
+    ).first()
     return _enrich_doctor(d) if d else None
 
 
 def create_doctor(db: Session, doctor: schemas.DoctorCreate):
-    db_doctor = models.Doctor(**doctor.dict())
+    doctor_data = doctor.dict(exclude={"username", "password"})
+    db_doctor = models.Doctor(**doctor_data)
     db.add(db_doctor)
     db.commit()
     db.refresh(db_doctor)
     write_audit(db, "CREATE", "doctor", entity_id=db_doctor.doctor_id)
+    # Create a linked User account if credentials were provided
+    if doctor.username and doctor.password:
+        import auth as _auth
+        _auth.create_user(db, doctor.username, doctor.password, "DOCTOR", doctor_id=db_doctor.doctor_id)
     return _enrich_doctor(db_doctor)
 
 
 def delete_doctor(db: Session, doctor_id: int):
+    """Hard delete: physically remove doctor from the DB.
+    Also nullifies doctor_id on any linked user accounts.
+    """
     doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == doctor_id).first()
     if doctor:
+        # Nullify FK on linked user accounts before deleting
+        db.query(models.User).filter(models.User.doctor_id == doctor_id).update({"doctor_id": None})
+        write_audit(db, "DELETE", "doctor", entity_id=doctor_id)
         db.delete(doctor)
         db.commit()
     return doctor
@@ -368,30 +437,43 @@ def _enrich_nurse(nurse):
     return nurse
 
 
-def get_nurses(db: Session, hospital_id: int = None):
+def get_nurses(db: Session, hospital_id: int = None, limit: int = 200, offset: int = 0):
     q = db.query(models.Nurse)
     if hospital_id:
         q = q.filter(models.Nurse.hospital_id == hospital_id)
-    return [_enrich_nurse(n) for n in q.all()]
+    return [_enrich_nurse(n) for n in q.offset(offset).limit(limit).all()]
 
 
 def get_nurse(db: Session, nurse_id: int):
-    n = db.query(models.Nurse).filter(models.Nurse.nurse_id == nurse_id).first()
+    n = db.query(models.Nurse).filter(
+        models.Nurse.nurse_id == nurse_id,
+    ).first()
     return _enrich_nurse(n) if n else None
 
 
 def create_nurse(db: Session, nurse: schemas.NurseCreate):
-    db_nurse = models.Nurse(**nurse.dict())
+    nurse_data = nurse.dict(exclude={"username", "password"})
+    db_nurse = models.Nurse(**nurse_data)
     db.add(db_nurse)
     db.commit()
     db.refresh(db_nurse)
     write_audit(db, "CREATE", "nurse", entity_id=db_nurse.nurse_id)
+    # Create a linked User account if credentials were provided
+    if nurse.username and nurse.password:
+        import auth as _auth
+        _auth.create_user(db, nurse.username, nurse.password, "NURSE", nurse_id=db_nurse.nurse_id)
     return _enrich_nurse(db_nurse)
 
 
 def delete_nurse(db: Session, nurse_id: int):
+    """Hard delete: physically remove nurse from the DB.
+    Also nullifies nurse_id on any linked user accounts.
+    """
     nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == nurse_id).first()
     if nurse:
+        # Nullify FK on linked user accounts before deleting
+        db.query(models.User).filter(models.User.nurse_id == nurse_id).update({"nurse_id": None})
+        write_audit(db, "DELETE", "nurse", entity_id=nurse_id)
         db.delete(nurse)
         db.commit()
     return nurse
@@ -448,4 +530,43 @@ def get_chat_messages(db: Session, patient_id: int, limit: int = 100):
         .order_by(models.ChatMessage.created_at.asc())
         .limit(limit)
         .all()
+    )
+
+
+# ── WhatsApp Logs ─────────────────────────────────────────────────────────────
+def create_whatsapp_log(db: Session, alert_id: int = None, recipient: str = "",
+                         message_type: str = "alert", status: str = "PENDING",
+                         error: str = None, idempotency_key: str = None):
+    # Check idempotency — do not duplicate successful sends
+    if idempotency_key:
+        existing = db.query(models.WhatsAppLog).filter(
+            models.WhatsAppLog.idempotency_key == idempotency_key,
+            models.WhatsAppLog.status == "SENT",
+        ).first()
+        if existing:
+            logger.debug("WhatsApp idempotency hit: %s already SENT", idempotency_key)
+            return existing
+
+    log = models.WhatsAppLog(
+        alert_id=alert_id,
+        recipient=recipient,
+        message_type=message_type,
+        status=status,
+        attempts=1,
+        error=error,
+        idempotency_key=idempotency_key,
+        created_at=datetime.now(),
+        sent_at=datetime.now() if status == "SENT" else None,
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return log
+
+
+def get_whatsapp_logs(db: Session, limit: int = 100, offset: int = 0):
+    return (
+        db.query(models.WhatsAppLog)
+        .order_by(models.WhatsAppLog.created_at.desc())
+        .offset(offset).limit(limit).all()
     )

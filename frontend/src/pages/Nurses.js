@@ -1,18 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import { getNurses, createNurse, deleteNurse, getNursePatients, getHospitals } from '../api';
 
+const COUNTRY_CODES = [
+  { code: '91',  label: '🇮🇳 +91' },
+  { code: '1',   label: '🇺🇸 +1' },
+  { code: '44',  label: '🇬🇧 +44' },
+  { code: '971', label: '🇦🇪 +971' },
+  { code: '966', label: '🇸🇦 +966' },
+  { code: '61',  label: '🇦🇺 +61' },
+  { code: '49',  label: '🇩🇪 +49' },
+  { code: '33',  label: '🇫🇷 +33' },
+  { code: '81',  label: '🇯🇵 +81' },
+  { code: '86',  label: '🇨🇳 +86' },
+  { code: '65',  label: '🇸🇬 +65' },
+  { code: '60',  label: '🇲🇾 +60' },
+  { code: '92',  label: '🇵🇰 +92' },
+  { code: '880', label: '🇧🇩 +880' },
+  { code: '94',  label: '🇱🇰 +94' },
+  { code: '977', label: '🇳🇵 +977' },
+];
+
 const DEPARTMENTS = [
   'ICU', 'Emergency', 'General', 'Cardiology', 'Neurology',
   'Pediatrics', 'Oncology', 'Surgery', 'Orthopedics',
 ];
 
-const EMPTY = { name: '', department: 'General', phone: '', email: '', hospital_id: '' };
+const EMPTY = { name: '', department: 'General', phone: '', email: '', hospital_id: '', username: '', password: '' };
 
 export default function Nurses() {
-  const [nurses,    setNurses]    = useState([]);
-  const [hospitals, setHospitals] = useState([]);
-  const [form,      setForm]      = useState(EMPTY);
-  const [showAdd,   setShowAdd]   = useState(false);
+  const [nurses,      setNurses]      = useState([]);
+  const [hospitals,   setHospitals]   = useState([]);
+  const [form,        setForm]        = useState(EMPTY);
+  const [countryCode, setCountryCode] = useState('91');
+  const [showAdd,     setShowAdd]     = useState(false);
   const [expanded,  setExpanded]  = useState(null);
   const [patients,  setPatients]  = useState([]);
   const [loading,   setLoading]   = useState(true);
@@ -36,11 +56,14 @@ export default function Nurses() {
     e.preventDefault();
     setError('');
     try {
+      const cleanPhone = form.phone.replace(/[^0-9]/g, '').replace(/^0+/, '');
       await createNurse({
         ...form,
+        phone: cleanPhone ? countryCode + cleanPhone : '',
         hospital_id: form.hospital_id ? parseInt(form.hospital_id) : null,
       });
       setForm(EMPTY);
+      setCountryCode('91');
       setShowAdd(false);
       load();
     } catch (err) { setError(err.response?.data?.detail || 'Create failed'); }
@@ -92,8 +115,29 @@ export default function Nurses() {
                 </select>
               </div>
               <div className="form-group">
+                <label>Login Username <span style={{ color:'#64748b', fontWeight:400, fontSize:11 }}>(optional — for nurse login access)</span></label>
+                <input value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="e.g. nurse.jane" autoComplete="off" />
+              </div>
+              <div className="form-group">
+                <label>Login Password <span style={{ color:'#64748b', fontWeight:400, fontSize:11 }}>(min 6 chars)</span></label>
+                <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="••••••" autoComplete="new-password" disabled={!form.username} />
+              </div>
+              <div className="form-group">
                 <label>Phone</label>
-                <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+1-555-0200" />
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <select value={countryCode} onChange={e => setCountryCode(e.target.value)}
+                    style={{ width: 'auto', flexShrink: 0 }}>
+                    {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+                  </select>
+                  <input value={form.phone}
+                    onChange={e => setForm({ ...form, phone: e.target.value.replace(/[^0-9]/g, '') })}
+                    placeholder="9876543210" style={{ flex: 1, minWidth: 0, width: 'auto' }} />
+                </div>
+                {form.phone.trim() && (
+                  <small style={{ color:'#64748b', fontFamily:'monospace' }}>
+                    → {countryCode}{form.phone.replace(/^0+/, '')}
+                  </small>
+                )}
               </div>
               <div className="form-group">
                 <label>Email</label>

@@ -19,7 +19,7 @@ logging.basicConfig(
 )
 
 INTERVAL_SECONDS = 10
-ESCALATION_MINUTES = 2
+ESCALATION_MINUTES = 2   # v5.2 FIX 3: aligned with celery_tasks (was 5)
 
 
 def run():
@@ -36,12 +36,11 @@ def run():
                 vital, alerts = fake_generator.save_fake(db, p.patient_id)
                 alert_str = ", ".join(alerts) if alerts else "—"
                 logging.info(
-                    "Patient %-3s | HR=%3d  SpO2=%3d%%  Temp=%.1f°F  BP=%-9s | Alerts: %s",
+                    "Patient %-3s | HR=%3d  SpO2=%3d%%  Temp=%.1f°F | Alerts: %s",
                     p.patient_id,
                     vital.heart_rate,
                     vital.spo2,
                     vital.temperature,
-                    vital.blood_pressure,
                     alert_str,
                 )
 

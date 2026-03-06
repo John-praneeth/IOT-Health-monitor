@@ -1,0 +1,4 @@
+# ── Frontend Docker build exclusions ──────────────────────────────────────────
+node_modules/
+build/
+.DS_Store
