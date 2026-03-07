@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { getAlerts, acknowledgeAlert, getPatients, getDoctors, getWhatsAppConfig } from '../api';
 
+// Treat DB timestamps as UTC → convert to local time correctly
+const toLocal = (ts) => ts ? new Date(ts.endsWith('Z') ? ts : ts + 'Z') : null;
+
 export default function Alerts() {
   const [alerts,      setAlerts]      = useState([]);
   const [patients,    setPatients]    = useState([]);
@@ -169,7 +172,7 @@ export default function Alerts() {
                   <td>{patientName(a.patient_id)}</td>
                   <td><span className={`badge ${badgeForType(a.alert_type)}`}>{a.alert_type}</span></td>
                   <td>{statusBadge(a.status)}</td>
-                  <td>{a.created_at ? new Date(a.created_at).toLocaleString() : '—'}</td>
+                  <td>{a.created_at ? toLocal(a.created_at).toLocaleString() : '—'}</td>
                   <td>
                     {canAcknowledge && (a.status === 'PENDING' || a.status === 'ESCALATED') && (
                       <button className="btn btn-success btn-sm" onClick={() => handleAck(a.alert_id)}>

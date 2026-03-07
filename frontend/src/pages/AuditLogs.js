@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { getAuditLogs } from '../api';
 
+const toLocal = (ts) => ts ? new Date(ts.endsWith('Z') ? ts : ts + 'Z') : null;
+
 export default function AuditLogs() {
   const [logs,       setLogs]       = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -70,7 +72,7 @@ export default function AuditLogs() {
                   <td>{l.entity}</td>
                   <td>{l.entity_id || '—'}</td>
                   <td>{l.user_id || '—'}</td>
-                  <td>{l.timestamp ? new Date(l.timestamp).toLocaleString() : '—'}</td>
+                  <td>{l.timestamp ? toLocal(l.timestamp).toLocaleString() : '—'}</td>
                 </tr>
               ))}
             </tbody>

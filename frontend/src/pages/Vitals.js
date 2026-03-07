@@ -9,6 +9,9 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
+// Treat DB timestamps as UTC (they have no tz info) → convert to local time correctly
+const toLocal = (ts) => ts ? new Date(ts.endsWith('Z') ? ts : ts + 'Z') : null;
+
 export default function Vitals() {
   const [vitals,       setVitals]       = useState([]);
   const [patients,     setPatients]     = useState([]);
@@ -56,7 +59,7 @@ export default function Vitals() {
 
   // ── Chart data (reversed so oldest is left) ────────────────────────────
   const chartVitals = [...vitals].reverse();
-  const labels = chartVitals.map(v => v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : '');
+  const labels = chartVitals.map(v => v.timestamp ? toLocal(v.timestamp).toLocaleTimeString() : '');
 
   const chartData = {
     labels,
@@ -175,7 +178,7 @@ export default function Vitals() {
               )}
               {vitals.map(v => (
                 <tr key={v.vital_id} className={rowClass(v)}>
-                  <td>{v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : '—'}</td>
+                  <td>{v.timestamp ? toLocal(v.timestamp).toLocaleTimeString() : '—'}</td>
                   <td>{patientName(v.patient_id)}</td>
                   <td style={{ color: (v.heart_rate > 110 || v.heart_rate < 50) ? '#f87171' : '#34d399' }}>
                     {v.heart_rate} bpm

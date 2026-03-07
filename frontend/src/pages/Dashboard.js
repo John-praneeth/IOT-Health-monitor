@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { getPatients, getAlerts, getLatestVital, getDoctors, getDashboardStats, getMyNotifications, markAllNotificationsRead, markNotificationRead } from '../api';
 
+// Treat DB timestamps as UTC → convert to local time correctly
+const toLocal = (ts) => ts ? new Date(ts.endsWith('Z') ? ts : ts + 'Z') : null;
+
 export default function Dashboard() {
   const [patients,      setPatients]      = useState([]);
   const [alerts,        setAlerts]        = useState([]);
@@ -142,7 +145,7 @@ export default function Dashboard() {
                     }}>
                     <div style={{ color: '#e2e8f0', fontSize: 12 }}>{n.message}</div>
                     <div style={{ color: '#64748b', fontSize: 10, marginTop: 4 }}>
-                      {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
+                      {n.created_at ? toLocal(n.created_at).toLocaleString() : ''}
                       {!n.is_read && <span style={{ color: '#3b82f6', marginLeft: 8 }}>● new</span>}
                     </div>
                   </div>
@@ -268,7 +271,7 @@ export default function Dashboard() {
                       : <span className="badge badge-amber">PENDING</span>
                     }
                   </td>
-                  <td>{a.created_at ? new Date(a.created_at).toLocaleTimeString() : '—'}</td>
+                  <td>{a.created_at ? toLocal(a.created_at).toLocaleTimeString() : '—'}</td>
                 </tr>
               );
             })}
