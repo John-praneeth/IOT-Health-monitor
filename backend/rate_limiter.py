@@ -44,7 +44,6 @@ limiter = Limiter(
 
 # Specific rate limits
 LOGIN_LIMIT = "5/minute"
-API_LIMIT = "100/minute"
 
 
 def setup_rate_limiter(app):

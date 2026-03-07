@@ -68,13 +68,10 @@ FROM vitals_old;
 -- Step 7: Update the sequence to continue from the last vital_id
 SELECT setval('vitals_vital_id_seq', COALESCE((SELECT MAX(vital_id) FROM vitals), 1));
 
--- Step 8: Update foreign keys pointing to vitals
--- alerts.vital_id references vitals — need to drop & recreate
+-- Step 8: Drop FK pointing to vitals — partitioned tables cannot be referenced by FK
+-- (vital_id is part of composite PK so FK re-creation is not possible)
+-- The application handles orphan-cleanup via ON DELETE SET NULL at the ORM level.
 ALTER TABLE alerts DROP CONSTRAINT IF EXISTS alerts_vital_id_fkey;
-ALTER TABLE alerts ADD CONSTRAINT alerts_vital_id_fkey
-    FOREIGN KEY (vital_id) REFERENCES vitals(vital_id, "timestamp") NOT VALID;
--- Note: NOT VALID skips validation of existing rows (faster).
--- Run ALTER TABLE alerts VALIDATE CONSTRAINT alerts_vital_id_fkey; afterwards.
 
 -- Step 9: Drop old table after successful migration
 -- Uncomment after verifying the migration:

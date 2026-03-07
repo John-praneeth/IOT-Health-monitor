@@ -86,5 +86,5 @@ def require_redis_on_startup():
         logger.critical("❌ REDIS_REQUIRED=true but Redis is unavailable. Refusing to start.")
         sys.exit(1)
     elif not available:
-        logger.warning("⚠️ Redis not available. Rate limiter and Celery features will be degraded.")
+        logger.warning("⚠️ Redis not available. Rate limiter and pub/sub WebSocket will be degraded.")
 

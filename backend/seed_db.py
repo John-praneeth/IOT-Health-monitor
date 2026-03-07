@@ -5,7 +5,7 @@ Only creates the admin user if it doesn't already exist.
 All real data (hospitals, doctors, nurses, patients) must be entered
 through the application UI by the admin.
 
-Fake vitals are generated automatically by the scheduler/Celery task
+Fake vitals are generated automatically by the scheduler
 whenever a real patient exists in the system.
 
 Run:  python seed_db.py

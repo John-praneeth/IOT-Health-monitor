@@ -12,6 +12,7 @@ export default function Alerts() {
   const [whatsappStatus, setWhatsappStatus] = useState(null);
 
   const role = localStorage.getItem('role');
+  const userId = parseInt(localStorage.getItem('user_id') || '0', 10);
   const canAcknowledge = role === 'ADMIN' || role === 'DOCTOR';
 
   const load = useCallback(async () => {
@@ -44,7 +45,7 @@ export default function Alerts() {
 
   const handleAck = async (alertId) => {
     try {
-      await acknowledgeAlert(alertId, 1);
+      await acknowledgeAlert(alertId, userId || 1);
       load();
     } catch (err) { alert('Failed to acknowledge: ' + err.message); }
   };
@@ -90,15 +91,14 @@ export default function Alerts() {
               borderRadius: 12,
               fontSize: 11,
               fontWeight: 600,
-              background: whatsappStatus.enabled && whatsappStatus.recipient_count > 0
+              background: whatsappStatus.enabled && whatsappStatus.credentials_set
                 ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
-              color: whatsappStatus.enabled && whatsappStatus.recipient_count > 0
+              color: whatsappStatus.enabled && whatsappStatus.credentials_set
                 ? '#6ee7b7' : '#fca5a5',
-              border: `1px solid ${whatsappStatus.enabled && whatsappStatus.recipient_count > 0
+              border: `1px solid ${whatsappStatus.enabled && whatsappStatus.credentials_set
                 ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
             }}>
-              📱 WhatsApp {whatsappStatus.enabled && whatsappStatus.recipient_count > 0 ? 'Active' : 'Inactive'}
-              {whatsappStatus.recipient_count > 0 && ` · ${whatsappStatus.recipient_count} recipient${whatsappStatus.recipient_count > 1 ? 's' : ''}`}
+              📱 WhatsApp {whatsappStatus.enabled && whatsappStatus.credentials_set ? 'Active' : 'Inactive'}
             </span>
           )}
         </p>

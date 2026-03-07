@@ -25,7 +25,6 @@ API.interceptors.response.use(
 );
 
 // ── Auth ──────────────────────────────────────────────────
-export const register         = (data) => API.post('/auth/register', data);
 export const registerDoctor   = (data) => API.post('/auth/register/doctor', data);
 export const registerNurse    = (data) => API.post('/auth/register/nurse', data);
 export const login            = (data) => API.post('/auth/login', data);
@@ -73,9 +72,6 @@ export const getDashboardStats = ()          => API.get('/dashboard/stats');
 // ── Chat (per-patient) ───────────────────────────────────
 export const getPatientChat  = (patientId, params={}) => API.get(`/patients/${patientId}/chat`, { params });
 export const sendPatientChat = (patientId, message)   => API.post(`/patients/${patientId}/chat`, { message });
-
-// ── Escalations ───────────────────────────────────────────
-export const getEscalations = (params={})    => API.get('/escalations', { params });
 
 // ── Audit Logs ────────────────────────────────────────────
 export const getAuditLogs  = (params={})     => API.get('/audit-logs', { params });

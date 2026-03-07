@@ -5,6 +5,7 @@ Also runs alert escalation: PENDING alerts older than ESCALATION_MINUTES → ESC
 Run independently:  python scheduler.py
 """
 
+import json
 import time
 import logging
 from database import SessionLocal
@@ -19,7 +20,37 @@ logging.basicConfig(
 )
 
 INTERVAL_SECONDS = 10
-ESCALATION_MINUTES = 2   # v5.2 FIX 3: aligned with celery_tasks (was 5)
+ESCALATION_MINUTES = 2
+
+# ── Redis pub/sub publisher (optional) ────────────────────────────────────────
+import os
+_redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+_redis_client = None
+
+def _get_redis():
+    global _redis_client
+    if _redis_client is None:
+        try:
+            import redis as _redis
+            _redis_client = _redis.from_url(_redis_url, socket_connect_timeout=2)
+            _redis_client.ping()
+            logging.info("✅ Redis connected for pub/sub publishing")
+        except Exception as e:
+            logging.warning("Redis unavailable — WebSocket live push disabled: %s", e)
+            _redis_client = None
+    return _redis_client
+
+
+def _publish_vitals(patients_vitals: list):
+    """Publish latest vitals snapshot to Redis channel for WebSocket clients."""
+    try:
+        r = _get_redis()
+        if r:
+            r.publish("iot:vitals", json.dumps(patients_vitals))
+    except Exception as e:
+        global _redis_client
+        _redis_client = None  # force reconnect next time
+        logging.debug("Redis publish failed (will retry): %s", e)
 
 
 def run():
@@ -32,6 +63,7 @@ def run():
                 logging.warning("No patients found in DB.  Waiting…")
 
             # ── Generate fake vitals ─────────────────────────────────────
+            vitals_snapshot = []
             for p in patients:
                 vital, alerts = fake_generator.save_fake(db, p.patient_id)
                 alert_str = ", ".join(alerts) if alerts else "—"
@@ -43,6 +75,20 @@ def run():
                     vital.temperature,
                     alert_str,
                 )
+                vitals_snapshot.append({
+                    "patient_id": p.patient_id,
+                    "name": p.name,
+                    "room": p.room_number,
+                    "heart_rate": vital.heart_rate,
+                    "spo2": vital.spo2,
+                    "temperature": vital.temperature,
+                    "timestamp": str(vital.timestamp),
+                    "alerts": alerts,
+                })
+
+            # ── Publish to Redis for WebSocket live push ─────────────────
+            if vitals_snapshot:
+                _publish_vitals(vitals_snapshot)
 
             # ── Escalation check ─────────────────────────────────────────
             escalated = crud.escalate_stale_alerts(db, threshold_minutes=ESCALATION_MINUTES)

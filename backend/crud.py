@@ -321,12 +321,6 @@ def get_patients_by_doctor(db: Session, doctor_id: int):
     ).all()
 
 
-def get_patients_by_nurse(db: Session, nurse_id: int):
-    return db.query(models.Patient).filter(
-        models.Patient.assigned_nurse == nurse_id,
-    ).all()
-
-
 def get_patient(db: Session, patient_id: int):
     p = db.query(models.Patient).filter(
         models.Patient.patient_id == patient_id,

@@ -11,6 +11,7 @@ import AuditLogs from './pages/AuditLogs';
 import WhatsAppConfig from './pages/WhatsAppConfig';
 import SystemStatus from './pages/SystemStatus';
 import Login from './pages/Login';
+import { getMe } from './api';
 import './App.css';
 
 export default function App() {
@@ -22,17 +23,23 @@ export default function App() {
     const username = localStorage.getItem('username');
     const doctor_id = localStorage.getItem('doctor_id');
     const nurse_id = localStorage.getItem('nurse_id');
+    const user_id = localStorage.getItem('user_id');
     if (token && role && username) {
-      setUser({ token, role, username, doctor_id, nurse_id });
+      setUser({ token, role, username, doctor_id, nurse_id, user_id });
     }
   }, []);
 
-  const handleLogin = (data) => {
+  const handleLogin = async (data) => {
     localStorage.setItem('token', data.access_token);
     localStorage.setItem('role', data.role);
     localStorage.setItem('username', data.username);
     if (data.doctor_id) localStorage.setItem('doctor_id', data.doctor_id);
     if (data.nurse_id) localStorage.setItem('nurse_id', data.nurse_id);
+    // Fetch user_id from /auth/me
+    try {
+      const meRes = await getMe();
+      localStorage.setItem('user_id', meRes.data.user_id);
+    } catch { /* ignore */ }
     setUser({
       token: data.access_token, role: data.role, username: data.username,
       doctor_id: data.doctor_id, nurse_id: data.nurse_id,

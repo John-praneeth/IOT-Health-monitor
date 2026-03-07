@@ -321,6 +321,7 @@ def list_nurse_patients(nurse_id: int, db: Session = Depends(get_db)):
 def list_patients(
     doctor_id: Optional[int] = None,
     nurse_id: Optional[int] = None,
+    current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
     return crud.get_patients(db, doctor_id=doctor_id, nurse_id=nurse_id)
@@ -387,7 +388,11 @@ def assign_nurse(
 #  VITALS ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════════════════
 @app.post("/vitals", response_model=schemas.VitalsOut, tags=["Vitals"])
-def create_vitals(vital: schemas.VitalsCreate, db: Session = Depends(get_db)):
+def create_vitals(
+    vital: schemas.VitalsCreate,
+    current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR", "NURSE")),
+    db: Session = Depends(get_db),
+):
     return crud.create_vitals(db=db, vital=vital)
 
 
@@ -560,9 +565,7 @@ def list_audit_logs(
 #  WEBSOCKET – event-driven vitals push with Redis pub/sub (v5.2)
 # ═══════════════════════════════════════════════════════════════════════════════
 class ConnectionManager:
-    """WebSocket manager with per-IP rate limiting and Redis pub/sub support.
-    v5.2: Event-driven architecture — Celery publishes to Redis, backend subscribes.
-    """
+    """WebSocket manager with per-IP rate limiting and Redis pub/sub support."""
 
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -623,8 +626,7 @@ _redis_subscriber_started = False
 
 async def _redis_vitals_subscriber():
     """Subscribe to Redis pub/sub channel and broadcast to all WebSocket clients.
-    This is the event-driven architecture (v5.2 FIX 1):
-    Celery publishes → Redis channel → all backend instances subscribe → broadcast.
+    Event-driven: scheduler publishes → Redis channel → backend subscribes → broadcast.
     Uses redis.asyncio for non-blocking pub/sub.
     """
     import redis.asyncio as aioredis
@@ -893,7 +895,6 @@ def root():
         "version": "5.2.0",
         "docs": "/docs",
         "health": "/health",
-        "metrics": "/metrics",
     }
 
 
