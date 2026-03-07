@@ -132,7 +132,107 @@ IoT_healthCare/
 
 ---
 
-## 4. Quick Start — Local Development
+## 4. Quick Start
+
+There are **two ways** to run this project:
+
+| Method | Best For | Requires |
+|--------|----------|----------|
+| 🐳 **Docker** *(recommended)* | Demo, production, any machine | Docker Desktop |
+| 💻 **Local Dev** | Development, debugging | Python 3.11+, Node.js 18+, PostgreSQL, Redis |
+
+---
+
+## 4A. 🐳 Docker Setup *(Recommended — One Command)*
+
+### Prerequisites
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
+- That's it. No Python, Node.js, or PostgreSQL needed.
+
+### Step 1 — Clone the repo
+
+```bash
+git clone https://github.com/John-praneeth/IOT-Health-monitor.git
+cd IOT-Health-monitor
+```
+
+### Step 2 — Start everything
+
+```bash
+docker compose up -d --build
+```
+
+This single command will:
+1. Pull `postgres:16`, `redis:7` images
+2. Build the **backend** Docker image (Python + FastAPI)
+3. Build the **scheduler** Docker image
+4. Build the **frontend** Docker image (React → Nginx)
+5. Start all 6 containers in the correct dependency order
+6. Auto-create all database tables
+7. Auto-seed the admin user (`admin` / `admin123`)
+
+> ⏳ First run takes ~2–3 minutes to build. Subsequent starts take ~10 seconds.
+
+### Step 3 — Open the app
+
+| URL | Service |
+|-----|---------|
+| **http://localhost** | ✅ React Frontend |
+| **http://localhost:8000** | ✅ FastAPI Backend |
+| **http://localhost:8000/docs** | ✅ Swagger API Docs |
+| **http://localhost:8000/redoc** | ✅ ReDoc API Docs |
+
+### Step 4 — Login
+
+| Username | Password | Role |
+|----------|----------|------|
+| `admin` | `admin123` | ADMIN |
+
+### Managing Docker
+
+```bash
+# Start all services (background)
+docker compose up -d
+
+# Stop all services (keeps database data)
+docker compose down
+
+# Stop and delete all data (full reset)
+docker compose down -v
+
+# Rebuild after code changes
+docker compose up -d --build
+
+# Watch live logs from all services
+docker compose logs -f
+
+# Watch logs from a specific service
+docker compose logs -f backend
+docker compose logs -f scheduler
+
+# Check status of all containers
+docker compose ps
+```
+
+### Services Started by Docker Compose
+
+| Container | Image | Port | Purpose |
+|-----------|-------|------|---------|
+| `db` | `postgres:16-alpine` | 5432 | PostgreSQL database |
+| `redis` | `redis:7-alpine` | 6379 | Pub/Sub + rate limiter |
+| `backend` | Custom (Python) | 8000 | FastAPI REST API + WebSocket |
+| `scheduler` | Custom (Python) | — | Vitals generator + alert engine |
+| `frontend` | Custom (React+Nginx) | 80 | Web UI |
+| `db-backup` | `postgres:16-alpine` | — | Nightly DB backup (7-day retention) |
+
+> All environment variables (DB credentials, GREEN-API keys, Redis URL) are already configured inside `docker-compose.yml` — no `.env` file needed for Docker.
+
+---
+
+## 4B. 💻 Local Development Setup
+
+Use this only if you want to modify code and see live changes without rebuilding Docker images.
 
 ### Prerequisites
 
@@ -143,14 +243,14 @@ IoT_healthCare/
 | PostgreSQL | 14+ (running locally) |
 | Redis | Optional (WebSocket pub/sub; app works without it) |
 
-### 1 — Clone the repo
+### Step 1 — Clone the repo
 
 ```bash
 git clone https://github.com/John-praneeth/IOT-Health-monitor.git
 cd IOT-Health-monitor
 ```
 
-### 2 — Create the database
+### Step 2 — Create the database
 
 Open `psql` (or any PostgreSQL client) and run:
 
@@ -158,9 +258,9 @@ Open `psql` (or any PostgreSQL client) and run:
 CREATE DATABASE patient_monitor;
 ```
 
-> Tables are created **automatically** by SQLAlchemy on first backend startup — no migration scripts needed.
+> Tables are created **automatically** by SQLAlchemy on first backend startup.
 
-### 3 — Set up the backend
+### Step 3 — Set up the backend
 
 ```bash
 cd backend
@@ -172,20 +272,9 @@ source venv/bin/activate        # macOS / Linux
 
 # Install all dependencies
 pip install -r requirements.txt
-
-# Create the .env file (see Section 5)
 ```
 
-### 4 — Set up the frontend
-
-```bash
-cd frontend
-npm install
-```
-
----
-
-## 5. Environment Variables
+### Step 4 — Create the .env file
 
 Create `backend/.env` with the following content:
 
@@ -198,14 +287,7 @@ SECRET_KEY=change-this-to-a-long-random-string
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 # ── Data Source ──────────────────────────────────────────────────────────────
-# "fake"        = auto-generated realistic vitals (for development / demo)
-# "thingspeak"  = pull from real IoT device via ThingSpeak API (future)
 DATA_SOURCE=fake
-
-# ── ThingSpeak (only needed when DATA_SOURCE=thingspeak) ──────────────────
-# THINGSPEAK_CHANNEL_ID=your_channel_id
-# THINGSPEAK_READ_API_KEY=your_api_key
-# THINGSPEAK_TEMP_UNIT=F
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 CORS_ORIGINS=http://localhost:3000
@@ -217,6 +299,28 @@ GREEN_API_TOKEN=your_api_token
 WHATSAPP_RECIPIENTS=
 ```
 
+### Step 5 — Set up the frontend
+
+```bash
+cd frontend
+npm install
+```
+
+### Step 6 — Seed the admin user
+
+```bash
+cd backend
+source venv/bin/activate
+python seed_db.py
+```
+
+---
+
+## 5. Environment Variables
+
+> ⚠️ **For Docker**: All variables are already set in `docker-compose.yml`. Skip this section.  
+> **For Local Dev**: Create `backend/.env` as shown in Step 4 above.
+
 ### Getting GREEN-API credentials (free, ~2 minutes)
 
 1. Go to [console.green-api.com](https://console.green-api.com) and sign up for free
@@ -224,11 +328,13 @@ WHATSAPP_RECIPIENTS=
 3. Scan the QR code with WhatsApp *(Settings → Linked Devices → Link a Device)*
 4. Copy **idInstance** → set as `GREEN_API_ID`
 5. Copy **apiTokenInstance** → set as `GREEN_API_TOKEN`
-6. Restart the backend — WhatsApp is ready
+6. Restart the backend — WhatsApp alerts are ready
 
 ---
 
-## 6. Starting the App
+## 6. Starting the App (Local Dev Only)
+
+> 🐳 **Docker users**: everything is already running after `docker compose up -d`. Skip this section.
 
 You need **3 terminals** running simultaneously.
 
@@ -245,8 +351,6 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 | http://localhost:8000 | Backend API |
 | http://localhost:8000/docs | Swagger interactive docs |
 | http://localhost:8000/redoc | ReDoc documentation |
-
-> The backend **creates all database tables** on first run via `Base.metadata.create_all()`.
 
 ### Terminal 2 — Vitals Scheduler
 
