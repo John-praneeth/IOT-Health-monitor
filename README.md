@@ -3,7 +3,7 @@
 A **full-stack real-time patient vital-sign monitoring system** built with **FastAPI + React + PostgreSQL**.  
 Monitors heart rate, SpO₂, and temperature every 10 seconds — fires alerts, escalates unacknowledged alerts, sends **WhatsApp notifications** to doctors and nurses via GREEN-API, and delivers live chart updates to the browser over WebSocket.
 
-> **GitHub:** [John-praneeth/IOT-Health-monitor](https://github.com/John-praneeth/IOT-Health-monitor) · **Branch:** `railway-deploy`
+> **GitHub:** [John-praneeth/IOT-Health-monitor](https://github.com/John-praneeth/IOT-Health-monitor) · **Branch:** `dev`
 
 ---
 
@@ -299,7 +299,8 @@ Pre-configured tasks are available. Press `Ctrl+Shift+P` → **Tasks: Run Task**
 │      ├── Auto-resolve old PENDING/ESCALATED → RESOLVED               │
 │      ├── crud.create_alert()  →  INSERT (de-duplicated)              │
 │      └── whatsapp_notifier.send_alert_notification()                 │
-│   3. crud.escalate_stale_alerts()  →  PENDING > 2 min → ESCALATED   │
+│   3. redis.publish("iot:vitals", vitals_snapshot)  →  WebSocket push │
+│   4. crud.escalate_stale_alerts()  →  PENDING > 2 min → ESCALATED   │
 └───────────────────────────┬──────────────────────────────────────────┘
                             │ writes to
                             ▼
@@ -493,8 +494,9 @@ Runs as a standalone process (`python scheduler.py`). Loop every `INTERVAL_SECON
 2. Query all `Patient` rows
 3. For each patient → `fake_generator.save_fake(db, patient_id)`
 4. Log the result (HR / SpO₂ / Temp / Alerts triggered)
-5. Call `crud.escalate_stale_alerts(db, threshold_minutes=2)` — escalate anything older than 2 min
-6. Close DB session → sleep 10 seconds
+5. Publish vitals snapshot to Redis channel `iot:vitals` → pushes to all WebSocket clients
+6. Call `crud.escalate_stale_alerts(db, threshold_minutes=2)` — escalate anything older than 2 min
+7. Close DB session → sleep 10 seconds
 
 ---
 
@@ -726,7 +728,9 @@ Endpoint: `ws://localhost:8000/ws/vitals`
 ### Mode 1 — Event-Driven (Redis available)
 
 ```
-scheduler.py  →  [publishes to Redis channel "iot:vitals"]
+scheduler.py  (every 10s)
+  └─► generates vitals for all patients
+  └─► redis.publish("iot:vitals", JSON snapshot)
                         │
                         ▼
 _redis_vitals_subscriber()  (background asyncio task, started on FastAPI startup)
@@ -834,7 +838,7 @@ Base URL: `http://localhost:8000`
 | GET | `/doctors/{id}/patients` | ❌ | Patients assigned to doctor |
 | GET / POST | `/nurses` | POST: ADMIN/DOCTOR | List / create nurses |
 | DELETE | `/nurses/{id}` | ADMIN/DOCTOR | Permanently delete nurse |
-| GET / POST | `/patients` | POST: Any auth | List / create patients |
+| GET / POST | `/patients` | GET: Any auth · POST: Any auth | List / create patients |
 | DELETE | `/patients/{id}` | ADMIN/DOCTOR | Delete patient + all vitals |
 | PATCH | `/patients/{id}/assign_doctor` | Any auth | Assign doctor to patient |
 | PATCH | `/patients/{id}/assign_nurse` | Any auth | Assign nurse to patient |
@@ -843,7 +847,7 @@ Base URL: `http://localhost:8000`
 
 | Method | Endpoint | Auth Required | Description |
 |--------|----------|:---:|-------------|
-| POST | `/vitals` | ❌ | Submit a vitals reading |
+| POST | `/vitals` | ADMIN/DOCTOR/NURSE | Submit a vitals reading |
 | GET | `/vitals` | ❌ | List vitals (filter by `patient_id`, `doctor_id`) |
 | GET | `/vitals/latest/{patient_id}` | ❌ | Latest vital for a patient |
 
@@ -993,7 +997,7 @@ View the full log at **http://localhost:3000/audit-logs** (admin) or `GET /audit
 |----------|----------|------|
 | `admin` | `admin123` | ADMIN |
 
-> Create the admin account by running `python seed_db.py` in the backend, or by inserting directly into the `users` table.  
+> The admin account is **created automatically** on every fresh Docker startup — `seed_db.py` runs inside the container before Uvicorn starts. It is idempotent: skipped if an admin already exists.  
 > Doctors and nurses can self-register from the Login page, or an admin can create them with login credentials from the Doctors / Nurses management pages.
 
 ---
@@ -1003,8 +1007,10 @@ View the full log at **http://localhost:3000/audit-logs** (admin) or `GET /audit
 Run the full stack with a single command — no Python or Node.js installation required:
 
 ```bash
-docker compose up --build
+docker compose up -d
 ```
+
+> On first run, add `--build` to build the images: `docker compose up -d --build`
 
 | URL | Service |
 |-----|---------|
@@ -1012,13 +1018,30 @@ docker compose up --build
 | http://localhost:8000 | FastAPI backend |
 | http://localhost:8000/docs | Swagger interactive docs |
 
-Stop all services:
+### Services started
 
-```bash
-docker compose down
-```
+| Container | Purpose |
+|-----------|---------|
+| `db` | PostgreSQL 16 — persistent data |
+| `redis` | Redis 7 — rate limiter + WebSocket pub/sub |
+| `backend` | FastAPI + Uvicorn (seeds admin on startup) |
+| `scheduler` | Generates fake vitals every 10s, publishes to Redis |
+| `frontend` | React build served by nginx |
+| `db-backup` | Nightly PostgreSQL dump, 7-day retention |
 
-> The Docker Compose file includes PostgreSQL and Redis containers. The backend reads environment variables from `backend/.env` — create it before running Docker.
+### Commands
+
+| Command | What it does |
+|---------|-------------|
+| `docker compose up -d` | Start all services in background |
+| `docker compose down` | Stop all services, **keep database data** |
+| `docker compose down -v` | Stop all services + **delete all data** (full reset) |
+| `docker compose logs -f` | Watch live logs from all services |
+| `docker compose ps` | Check status of all containers |
+
+### Environment variables
+
+All environment variables are defined directly in `docker-compose.yml` under each service's `environment:` block. No `.env` file is needed for Docker — it is only used for local (non-Docker) development.
 
 ---
 
