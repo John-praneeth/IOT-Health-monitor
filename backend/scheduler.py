@@ -24,7 +24,7 @@ ESCALATION_MINUTES = 2
 
 # ── Redis pub/sub publisher (optional) ────────────────────────────────────────
 import os
-_redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+_redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 _redis_client = None
 
 def _get_redis():

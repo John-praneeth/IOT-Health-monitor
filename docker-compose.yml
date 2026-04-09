@@ -10,7 +10,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: john123
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
       POSTGRES_DB: patient_monitor
     ports:
       - "5432:5432"
@@ -49,8 +49,8 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://postgres:john123@db:5432/patient_monitor
-      SECRET_KEY: change-me-in-production-use-openssl-rand-hex-32
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-change-me}@db:5432/patient_monitor
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       ACCESS_TOKEN_EXPIRE_MINUTES: "30"
       DATA_SOURCE: fake
       CORS_ORIGINS: "http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:80"
@@ -62,8 +62,8 @@ services:
       SERVICE_NAME: iot-backend
       LOG_LEVEL: INFO
       WHATSAPP_ENABLED: "true"
-      GREEN_API_ID: "7103530136"
-      GREEN_API_TOKEN: "c264e3e4a48c448e9cad4c0486323f4ac38ec3ac6f034cbaab"
+      GREEN_API_ID: ${GREEN_API_ID:-}
+      GREEN_API_TOKEN: ${GREEN_API_TOKEN:-}
       WHATSAPP_RECIPIENTS: ""
       # v5.2 new env vars
       WS_BROADCAST_MODE: "event"
@@ -84,12 +84,12 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://postgres:john123@db:5432/patient_monitor
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-change-me}@db:5432/patient_monitor
       DATA_SOURCE: fake
       SERVICE_NAME: iot-scheduler
       WHATSAPP_ENABLED: "true"
-      GREEN_API_ID: "7103530136"
-      GREEN_API_TOKEN: "c264e3e4a48c448e9cad4c0486323f4ac38ec3ac6f034cbaab"
+      GREEN_API_ID: ${GREEN_API_ID:-}
+      GREEN_API_TOKEN: ${GREEN_API_TOKEN:-}
       WHATSAPP_RECIPIENTS: ""
       REDIS_URL: redis://redis:6379/0
     command: ["python", "scheduler.py"]
@@ -113,7 +113,7 @@ services:
     environment:
       PGHOST: db
       PGUSER: postgres
-      PGPASSWORD: john123
+      PGPASSWORD: ${POSTGRES_PASSWORD:-change-me}
       PGDATABASE: patient_monitor
       BACKUP_RETENTION_DAYS: "7"
     volumes:

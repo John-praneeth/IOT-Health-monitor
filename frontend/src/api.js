@@ -17,6 +17,12 @@ API.interceptors.request.use((config) => {
 API.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      localStorage.clear();
+      if (window.location.pathname !== '/') {
+        window.location.href = '/';
+      }
+    }
     if (error.response?.data?.error?.message && !error.response.data.detail) {
       error.response.data.detail = error.response.data.error.message;
     }

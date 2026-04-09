@@ -45,9 +45,64 @@ export default function Vitals() {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 5000);
+    const id = setInterval(load, 15000);
     return () => clearInterval(id);
   }, [load]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const base = window.location.port === '3000'
+      ? `${proto}://${window.location.hostname}:8000/ws/vitals`
+      : `${proto}://${window.location.host}/ws/vitals`;
+    const ws = new WebSocket(`${base}?token=${encodeURIComponent(token)}`);
+
+    ws.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data);
+        if (!Array.isArray(parsed) || parsed.length === 0) return;
+
+        const incoming = parsed
+          .filter(v => v?.patient_id != null)
+          .filter(v => !filter || String(v.patient_id) === String(filter))
+          .filter(v => {
+            if (!doctorFilter) return true;
+            const patient = patients.find(p => p.patient_id === v.patient_id);
+            return patient && String(patient.assigned_doctor) === String(doctorFilter);
+          })
+          .map(v => ({
+            ...v,
+            vital_id: v.vital_id ?? `ws-${v.patient_id}-${v.timestamp}`,
+          }));
+
+        if (incoming.length === 0) return;
+
+        setVitals(prev => {
+          const merged = [...incoming, ...prev];
+          const seen = new Set();
+          const deduped = [];
+          for (const row of merged) {
+            const key = `${row.patient_id}-${row.timestamp}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              deduped.push(row);
+            }
+            if (deduped.length >= 100) break;
+          }
+          return deduped;
+        });
+        setLastRefresh(new Date().toLocaleTimeString());
+      } catch {
+        // Ignore keepalive/invalid payloads.
+      }
+    };
+
+    return () => {
+      try { ws.close(); } catch { /* no-op */ }
+    };
+  }, [filter, doctorFilter, patients]);
 
   const patientName = (id) => patients.find(p => p.patient_id === id)?.name || `Patient ${id}`;
 

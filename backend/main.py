@@ -6,13 +6,16 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Depends, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from jose import JWTError, jwt
 
 import auth
 import crud
@@ -41,6 +44,12 @@ WS_MESSAGES_PER_MINUTE = int(os.getenv("WS_MESSAGES_PER_MINUTE", "120"))
 WS_BROADCAST_MODE = os.getenv("WS_BROADCAST_MODE", "event")  # "event" (incremental) or "full"
 WS_REDIS_CHANNEL = "iot:vitals"
 
+# ── Basic Prometheus-compatible metrics (no external dependency) ─────────────
+APP_STARTED_AT = time.time()
+HTTP_REQUESTS_TOTAL = 0
+HTTP_REQUEST_ERRORS_TOTAL = 0
+HTTP_REQUEST_DURATION_SECONDS_SUM = 0.0
+
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(
     title="IoT Healthcare Patient Monitor",
@@ -68,9 +77,21 @@ app.add_middleware(
 # ── Request ID middleware ─────────────────────────────────────────────────────
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
+    global HTTP_REQUESTS_TOTAL, HTTP_REQUEST_ERRORS_TOTAL, HTTP_REQUEST_DURATION_SECONDS_SUM
+    started = time.perf_counter()
     req_id = request.headers.get("X-Request-ID", generate_request_id())
     request_id_var.set(req_id)
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        HTTP_REQUESTS_TOTAL += 1
+        HTTP_REQUEST_ERRORS_TOTAL += 1
+        HTTP_REQUEST_DURATION_SECONDS_SUM += max(0.0, time.perf_counter() - started)
+        raise
+    HTTP_REQUESTS_TOTAL += 1
+    if response.status_code >= 500:
+        HTTP_REQUEST_ERRORS_TOTAL += 1
+    HTTP_REQUEST_DURATION_SECONDS_SUM += max(0.0, time.perf_counter() - started)
     response.headers["X-Request-ID"] = req_id
     return response
 
@@ -89,7 +110,11 @@ def get_db():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/auth/register", response_model=schemas.UserOut, tags=["Auth"])
-def register(body: schemas.RegisterRequest, db: Session = Depends(get_db)):
+def register(
+    body: schemas.RegisterRequest,
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
+):
     """Admin-only staff user registration."""
     if body.role == "ADMIN":
         raise HTTPException(status_code=403, detail="Admin accounts cannot be created via registration")
@@ -218,6 +243,7 @@ def create_hospital(
 def list_doctors(
     hospital_id: Optional[int] = None,
     specialization: Optional[str] = None,
+    current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
     return crud.get_doctors(db, hospital_id=hospital_id, specialization=specialization)
@@ -239,7 +265,11 @@ def create_doctor(
 
 
 @app.get("/doctors/{doctor_id}", response_model=schemas.DoctorOut, tags=["Doctors"])
-def get_doctor(doctor_id: int, db: Session = Depends(get_db)):
+def get_doctor(
+    doctor_id: int,
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
     d = crud.get_doctor(db, doctor_id)
     if not d:
         raise HTTPException(status_code=404, detail="Doctor not found")
@@ -261,7 +291,11 @@ def delete_doctor(
 
 
 @app.get("/doctors/{doctor_id}/patients", response_model=List[schemas.PatientOut], tags=["Doctors"])
-def list_doctor_patients(doctor_id: int, db: Session = Depends(get_db)):
+def list_doctor_patients(
+    doctor_id: int,
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
     return crud.get_patients(db, doctor_id=doctor_id)
 
 
@@ -269,7 +303,11 @@ def list_doctor_patients(doctor_id: int, db: Session = Depends(get_db)):
 #  NURSE ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════════════════
 @app.get("/nurses", response_model=List[schemas.NurseOut], tags=["Nurses"])
-def list_nurses(hospital_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_nurses(
+    hospital_id: Optional[int] = None,
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
     return crud.get_nurses(db, hospital_id=hospital_id)
 
 
@@ -288,7 +326,11 @@ def create_nurse(
 
 
 @app.get("/nurses/{nurse_id}", response_model=schemas.NurseOut, tags=["Nurses"])
-def get_nurse(nurse_id: int, db: Session = Depends(get_db)):
+def get_nurse(
+    nurse_id: int,
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
     n = crud.get_nurse(db, nurse_id)
     if not n:
         raise HTTPException(status_code=404, detail="Nurse not found")
@@ -310,7 +352,11 @@ def delete_nurse(
 
 
 @app.get("/nurses/{nurse_id}/patients", response_model=List[schemas.PatientOut], tags=["Nurses"])
-def list_nurse_patients(nurse_id: int, db: Session = Depends(get_db)):
+def list_nurse_patients(
+    nurse_id: int,
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
     return crud.get_patients(db, nurse_id=nurse_id)
 
 
@@ -337,7 +383,11 @@ def create_patient(
 
 
 @app.get("/patients/{patient_id}", response_model=schemas.PatientOut, tags=["Patients"])
-def get_patient(patient_id: int, db: Session = Depends(get_db)):
+def get_patient(
+    patient_id: int,
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
     p = crud.get_patient(db, patient_id)
     if not p:
         raise HTTPException(status_code=404, detail="Patient not found")
@@ -402,13 +452,18 @@ def get_vitals(
     doctor_id: Optional[int] = None,
     limit: int = 50,
     offset: int = 0,
+    current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
     return crud.get_vitals(db, patient_id=patient_id, doctor_id=doctor_id, limit=limit, offset=offset)
 
 
 @app.get("/vitals/latest/{patient_id}", response_model=schemas.VitalsOut, tags=["Vitals"])
-def get_latest_vital(patient_id: int, db: Session = Depends(get_db)):
+def get_latest_vital(
+    patient_id: int,
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
     v = crud.get_latest_vital(db, patient_id)
     if not v:
         raise HTTPException(status_code=404, detail="No vitals found for this patient")
@@ -424,6 +479,7 @@ def get_alerts(
     doctor_id: Optional[int] = None,
     limit: int = 100,
     offset: int = 0,
+    current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
     return crud.get_alerts(db, status=status, doctor_id=doctor_id, limit=limit, offset=offset)
@@ -449,6 +505,7 @@ def acknowledge_alert(
 def list_escalations(
     alert_id: Optional[int] = None,
     doctor_id: Optional[int] = None,
+    current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
     return crud.get_escalations(db, alert_id=alert_id, doctor_id=doctor_id)
@@ -491,7 +548,10 @@ def read_all_notifications(
 #  DASHBOARD STATS
 # ═══════════════════════════════════════════════════════════════════════════════
 @app.get("/dashboard/stats", response_model=schemas.DashboardStats, tags=["Dashboard"])
-def dashboard_stats(db: Session = Depends(get_db)):
+def dashboard_stats(
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
     return crud.get_dashboard_stats(db)
 
 
@@ -658,12 +718,46 @@ async def startup_redis_subscriber():
         logger.info("Redis pub/sub WebSocket subscriber started (v5.2 event-driven)")
 
 
+def _get_ws_user(token: str, db: Session) -> Optional[models.User]:
+    """Resolve a WebSocket user from a JWT token."""
+    try:
+        payload = jwt.decode(token, auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            return None
+    except JWTError:
+        return None
+    return db.query(models.User).filter(models.User.username == username).first()
+
+
 @app.websocket("/ws/vitals")
 async def ws_vitals(websocket: WebSocket):
     """v5.2: Event-driven WebSocket. Clients connect and receive updates pushed
     from Redis pub/sub. No DB polling in the WebSocket handler.
     Falls back to periodic polling if Redis is unavailable.
     """
+    token = websocket.query_params.get("token")
+    if not token:
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+
+    if not token:
+        await websocket.accept()
+        await websocket.close(code=1008, reason="Missing auth token")
+        return
+
+    db = SessionLocal()
+    try:
+        user = _get_ws_user(token, db)
+    finally:
+        db.close()
+
+    if not user:
+        await websocket.accept()
+        await websocket.close(code=1008, reason="Invalid auth token")
+        return
+
     client_ip = websocket.client.host if websocket.client else "unknown"
     accepted = await manager.connect(websocket, client_ip)
     if not accepted:
@@ -710,6 +804,30 @@ async def ws_vitals(websocket: WebSocket):
         pass
     finally:
         manager.disconnect(websocket, client_ip)
+
+
+@app.get("/metrics", tags=["Monitoring"])
+def metrics():
+    """Prometheus scrape endpoint for basic HTTP/runtime metrics."""
+    uptime = max(0.0, time.time() - APP_STARTED_AT)
+    lines = [
+        "# HELP iot_app_uptime_seconds Application uptime in seconds",
+        "# TYPE iot_app_uptime_seconds gauge",
+        f"iot_app_uptime_seconds {uptime:.6f}",
+        "# HELP iot_http_requests_total Total HTTP requests handled",
+        "# TYPE iot_http_requests_total counter",
+        f"iot_http_requests_total {HTTP_REQUESTS_TOTAL}",
+        "# HELP iot_http_request_errors_total Total HTTP requests ending in server errors",
+        "# TYPE iot_http_request_errors_total counter",
+        f"iot_http_request_errors_total {HTTP_REQUEST_ERRORS_TOTAL}",
+        "# HELP iot_http_request_duration_seconds_sum Cumulative HTTP request duration in seconds",
+        "# TYPE iot_http_request_duration_seconds_sum counter",
+        f"iot_http_request_duration_seconds_sum {HTTP_REQUEST_DURATION_SECONDS_SUM:.6f}",
+        "# HELP iot_websocket_active_connections Current active WebSocket client connections",
+        "# TYPE iot_websocket_active_connections gauge",
+        f"iot_websocket_active_connections {manager.get_stats()['active_connections']}",
+    ]
+    return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

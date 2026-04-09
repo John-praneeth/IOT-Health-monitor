@@ -270,3 +270,35 @@ tr:hover td { background: #0f172a55; }
   border-color: #38bdf8;
   box-shadow: 0 0 0 2px rgba(56,189,248,.2);
 }
+
+@media (max-width: 900px) {
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid #334155;
+    padding: 12px;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .sidebar-user {
+    margin-top: 8px;
+    border-top: none;
+    align-items: flex-start;
+  }
+
+  .app-layout {
+    flex-direction: column;
+  }
+
+  .main-content {
+    margin-left: 0;
+    max-width: 100vw;
+    padding: 16px;
+  }
+}

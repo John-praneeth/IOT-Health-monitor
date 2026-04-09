@@ -5,13 +5,20 @@ tests/test_auth.py  –  Integration tests for auth endpoints.
 import pytest
 
 
+def _admin_headers(client):
+    resp = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+    assert resp.status_code == 200
+    token = resp.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
 def test_register_and_login(client):
     # Register (non-admin role, since ADMIN registration is blocked)
     resp = client.post("/auth/register", json={
         "username": "testdoctor",
         "password": "secret123",
         "role": "DOCTOR",
-    })
+    }, headers=_admin_headers(client))
     assert resp.status_code == 200
     data = resp.json()
     assert data["username"] == "testdoctor"
@@ -40,7 +47,7 @@ def test_admin_registration_blocked(client):
         "username": "sneaky_admin",
         "password": "secret123",
         "role": "ADMIN",
-    })
+    }, headers=_admin_headers(client))
     assert resp.status_code == 403
 
 
@@ -49,12 +56,12 @@ def test_duplicate_username(client):
         "username": "dup_user",
         "password": "pass1234",
         "role": "NURSE",
-    })
+    }, headers=_admin_headers(client))
     resp = client.post("/auth/register", json={
         "username": "dup_user",
         "password": "pass5678",
         "role": "NURSE",
-    })
+    }, headers=_admin_headers(client))
     assert resp.status_code == 400
 
 

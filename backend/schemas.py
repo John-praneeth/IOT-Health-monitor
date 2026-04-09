@@ -154,11 +154,11 @@ class NurseSelfRegister(BaseModel):
 
 # ── Assignment ────────────────────────────────────────────────────────────────
 class AssignDoctor(BaseModel):
-    doctor_id: int
+    doctor_id: Optional[int] = None
 
 
 class AssignNurse(BaseModel):
-    nurse_id: int
+    nurse_id: Optional[int] = None
 
 
 # ── Alert Acknowledge ─────────────────────────────────────────────────────────

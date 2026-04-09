@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getPatients, getAlerts, getLatestVital, getDoctors, getDashboardStats, getMyNotifications, markAllNotificationsRead, markNotificationRead } from '../api';
+import { getPatients, getAlerts, getDoctors, getDashboardStats, getMyNotifications, markAllNotificationsRead, markNotificationRead } from '../api';
 
 // Treat DB timestamps as UTC → convert to local time correctly
 const toLocal = (ts) => ts ? new Date(ts.endsWith('Z') ? ts : ts + 'Z') : null;
@@ -35,17 +35,6 @@ export default function Dashboard() {
         const nRes = await getMyNotifications({ unread_only: false });
         setNotifications(nRes.data);
       } catch { /* auth may have expired */ }
-
-      const vitalsMap = {};
-      await Promise.all(
-        pRes.data.map(async (p) => {
-          try {
-            const vRes = await getLatestVital(p.patient_id);
-            vitalsMap[p.patient_id] = vRes.data;
-          } catch { /* no vitals yet */ }
-        })
-      );
-      setLiveVitals(vitalsMap);
       setLastRefresh(new Date().toLocaleTimeString());
     } catch (err) {
       console.error('Dashboard fetch error:', err);
@@ -56,9 +45,43 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchAll();
-    const id = setInterval(fetchAll, 5000);
+    const id = setInterval(fetchAll, 10000);
     return () => clearInterval(id);
   }, [fetchAll]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const base = window.location.port === '3000'
+      ? `${proto}://${window.location.hostname}:8000/ws/vitals`
+      : `${proto}://${window.location.host}/ws/vitals`;
+    const ws = new WebSocket(`${base}?token=${encodeURIComponent(token)}`);
+
+    ws.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data);
+        if (!Array.isArray(parsed)) return;
+        const next = {};
+        parsed.forEach((v) => {
+          if (v?.patient_id != null) {
+            next[v.patient_id] = v;
+          }
+        });
+        if (Object.keys(next).length > 0) {
+          setLiveVitals(next);
+          setLastRefresh(new Date().toLocaleTimeString());
+        }
+      } catch {
+        // Ignore keepalive/invalid payloads.
+      }
+    };
+
+    return () => {
+      try { ws.close(); } catch { /* no-op */ }
+    };
+  }, []);
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 

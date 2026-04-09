@@ -79,14 +79,16 @@ export default function Patients() {
 
   const handleAssignDoctor = async (patientId, doctorId) => {
     try {
-      await assignDoctor(patientId, parseInt(doctorId));
+      const parsedDoctorId = doctorId ? parseInt(doctorId, 10) : null;
+      await assignDoctor(patientId, parsedDoctorId);
       load();
     } catch (err) { setError('Failed to assign doctor'); }
   };
 
   const handleAssignNurse = async (patientId, nurseId) => {
     try {
-      await assignNurse(patientId, parseInt(nurseId));
+      const parsedNurseId = nurseId ? parseInt(nurseId, 10) : null;
+      await assignNurse(patientId, parsedNurseId);
       load();
     } catch (err) { setError('Failed to assign nurse'); }
   };
@@ -203,7 +205,7 @@ export default function Patients() {
                   <td>
                     {canManage ? (
                       <select className="inline-select" value={p.assigned_doctor || ''}
-                        onChange={e => e.target.value && handleAssignDoctor(p.patient_id, e.target.value)}>
+                        onChange={e => handleAssignDoctor(p.patient_id, e.target.value)}>
                         <option value="">— None —</option>
                         {filteredDoctors.map(d => (
                           <option key={d.doctor_id} value={d.doctor_id}>
@@ -218,7 +220,7 @@ export default function Patients() {
                   <td>
                     {canManage ? (
                       <select className="inline-select" value={p.assigned_nurse || ''}
-                        onChange={e => e.target.value && handleAssignNurse(p.patient_id, e.target.value)}>
+                        onChange={e => handleAssignNurse(p.patient_id, e.target.value)}>
                         <option value="">— None —</option>
                         {nurses.map(n => <option key={n.nurse_id} value={n.nurse_id}>{n.name}</option>)}
                       </select>

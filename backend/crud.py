@@ -349,10 +349,15 @@ def delete_patient(db: Session, patient_id: int):
     return patient
 
 
-def assign_doctor(db: Session, patient_id: int, doctor_id: int):
+def assign_doctor(db: Session, patient_id: int, doctor_id: int | None):
     patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
     if not patient:
         return None
+    if doctor_id is None:
+        patient.assigned_doctor = None
+        db.commit()
+        db.refresh(patient)
+        return _enrich_patient(patient)
     doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == doctor_id).first()
     if not doctor:
         return None
@@ -362,10 +367,15 @@ def assign_doctor(db: Session, patient_id: int, doctor_id: int):
     return _enrich_patient(patient)
 
 
-def assign_nurse(db: Session, patient_id: int, nurse_id: int):
+def assign_nurse(db: Session, patient_id: int, nurse_id: int | None):
     patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
     if not patient:
         return None
+    if nurse_id is None:
+        patient.assigned_nurse = None
+        db.commit()
+        db.refresh(patient)
+        return _enrich_patient(patient)
     nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == nurse_id).first()
     if not nurse:
         return None

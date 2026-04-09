@@ -74,7 +74,7 @@ export default function App() {
               <>
                 <NavLink to="/hospitals"   className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>🏢 Hospitals</NavLink>
                 <NavLink to="/whatsapp"    className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>📱 WhatsApp</NavLink>
-                <NavLink to="/status"      className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>�️ System Status</NavLink>
+                <NavLink to="/status"      className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>🖥️ System Status</NavLink>
                 <NavLink to="/audit-logs"  className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>📋 Audit Logs</NavLink>
               </>
             )}
