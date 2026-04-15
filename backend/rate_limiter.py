@@ -3,7 +3,7 @@ rate_limiter.py  –  Rate limiting for FastAPI using slowapi.
 • 5 login attempts/minute per IP
 • 100 API requests/minute per user
 
-v5.1: Fail-open when Redis is unavailable.
+v5.1: Fail-safe fallback to in-memory limiter when Redis is unavailable.
 """
 
 import os
@@ -11,6 +11,8 @@ import logging
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+
+from logger import log_security_event
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,16 @@ LOGIN_LIMIT = "5/minute"
 
 
 def setup_rate_limiter(app):
-    """Attach rate limiter to the FastAPI app. Fails open on errors."""
+    """Attach rate limiter to the FastAPI app with fail-safe limits."""
+    def _logged_rate_limit_handler(request, exc):
+        log_security_event(
+            "RATE_LIMIT_HIT",
+            request=request,
+            ip=get_remote_address(request),
+            method=request.method,
+            path=request.url.path,
+        )
+        return _rate_limit_exceeded_handler(request, exc)
+
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, _logged_rate_limit_handler)

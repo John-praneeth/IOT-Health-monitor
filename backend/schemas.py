@@ -6,9 +6,9 @@ from datetime import datetime
 # ── Vitals ──────────────────────────────────────────────────────────────────
 class VitalsBase(BaseModel):
     patient_id: int
-    heart_rate: int
-    spo2: int
-    temperature: float
+    heart_rate: int = Field(..., ge=30, le=220)
+    spo2: int = Field(..., ge=70, le=100)
+    temperature: float = Field(..., ge=30, le=45)
 
 
 class VitalsCreate(VitalsBase):
@@ -16,7 +16,7 @@ class VitalsCreate(VitalsBase):
 
 
 class VitalsOut(VitalsBase):
-    vital_id: int
+    vital_id: Optional[int] = None
     timestamp: Optional[datetime] = None
 
     class Config:
@@ -40,9 +40,9 @@ class AlertOut(BaseModel):
 
 # ── Patients ─────────────────────────────────────────────────────────────────
 class PatientBase(BaseModel):
-    name: str
-    age: int
-    room_number: str
+    name: str = Field(..., min_length=1, max_length=100)
+    age: int = Field(..., ge=0, le=130)
+    room_number: str = Field(..., min_length=1, max_length=20)
     hospital_id: Optional[int] = None
     assigned_doctor: Optional[int] = None
     assigned_nurse: Optional[int] = None
@@ -64,10 +64,10 @@ class PatientOut(PatientBase):
 
 # ── Hospitals ─────────────────────────────────────────────────────────────────
 class HospitalBase(BaseModel):
-    name: str
-    location: str
-    phone: Optional[str] = None
-    email: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    location: str = Field(..., min_length=1, max_length=200)
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[str] = Field(None, max_length=100)
 
 
 class HospitalCreate(HospitalBase):
@@ -83,11 +83,11 @@ class HospitalOut(HospitalBase):
 
 # ── Doctors ───────────────────────────────────────────────────────────────────
 class DoctorBase(BaseModel):
-    name: str
-    specialization: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    specialization: Optional[str] = Field(None, max_length=100)
     hospital_id: Optional[int] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[str] = Field(None, max_length=100)
     is_freelancer: Optional[bool] = False
     is_available: Optional[bool] = True
 
@@ -120,11 +120,11 @@ class DoctorSelfRegister(BaseModel):
 
 # ── Nurses ────────────────────────────────────────────────────────────────────
 class NurseBase(BaseModel):
-    name: str
-    department: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    department: Optional[str] = Field(None, max_length=100)
     hospital_id: Optional[int] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[str] = Field(None, max_length=100)
 
 
 class NurseCreate(NurseBase):
@@ -180,8 +180,8 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=1, max_length=200)
 
 
 class TokenResponse(BaseModel):

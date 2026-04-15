@@ -11,6 +11,8 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
+from logger import log_security_event
+
 logger = logging.getLogger(__name__)
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
@@ -21,6 +23,13 @@ def setup_exception_handlers(app: FastAPI):
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
+        if exc.status_code == 403:
+            log_security_event(
+                "FORBIDDEN_ACCESS",
+                request=request,
+                path=request.url.path,
+                method=request.method,
+            )
         logger.warning(
             "HTTP %d: %s %s – %s",
             exc.status_code, request.method, request.url.path, exc.detail,

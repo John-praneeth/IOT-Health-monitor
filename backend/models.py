@@ -78,6 +78,9 @@ class Vitals(Base):
 
     __table_args__ = (
         Index("idx_vitals_patient_ts", "patient_id", timestamp.desc()),
+        CheckConstraint("heart_rate BETWEEN 30 AND 220", name="ck_vitals_heart_rate_range"),
+        CheckConstraint("spo2 BETWEEN 70 AND 100", name="ck_vitals_spo2_range"),
+        CheckConstraint("temperature BETWEEN 30 AND 45", name="ck_vitals_temperature_range"),
     )
 
 
@@ -216,4 +219,3 @@ class SLARecord(Base):
     __table_args__ = (
         Index("idx_sla_breached", "breached"),
     )
-

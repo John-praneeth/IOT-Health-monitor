@@ -185,8 +185,7 @@ def _normalize_phone(phone: str) -> str | None:
 def get_patient_recipients(patient_id: int) -> list[str]:
     """
     Fetch WhatsApp recipients from the DB for a given patient.
-    Returns phone numbers of the patient's assigned doctor and nurse.
-    This is the primary recipient source for MVP / GREEN-API free plan.
+    Returns only the phone number of the patient's assigned doctor.
     """
     recipients = []
     try:
@@ -213,17 +212,6 @@ def get_patient_recipients(patient_id: int) -> list[str]:
                         recipients.append(phone)
                         logger.debug("DB recipient: doctor %s (%s)", doctor.name, phone)
 
-            # Assigned nurse's phone
-            if patient.assigned_nurse:
-                nurse = db.query(m.Nurse).filter(
-                    m.Nurse.nurse_id == patient.assigned_nurse,
-                    m.Nurse.is_active == True,
-                ).first()
-                if nurse:
-                    phone = _normalize_phone(nurse.phone)
-                    if phone and phone not in recipients:
-                        recipients.append(phone)
-                        logger.debug("DB recipient: nurse %s (%s)", nurse.name, phone)
         finally:
             db.close()
     except Exception as exc:
@@ -493,13 +481,7 @@ def send_alert_notification(
     alert_id: int = None,
     hospital_id: int = None,
 ) -> dict:
-    """Send a WhatsApp alert to all configured recipients. Returns delivery status.
-    
-    MVP / GREEN-API Free Plan logic:
-    1. If explicit `recipients` list is passed → use it.
-    2. Otherwise, pull from DB (patient's assigned doctor/nurse phones).
-    3. If DB returns nothing, fall back to env/API-configured recipients.
-    """
+    """Send a WhatsApp alert to the assigned doctor only. Returns delivery status."""
     if not WHATSAPP_ENABLED:
         return {"enabled": False, "sent": 0, "failed": 0}
 
@@ -507,18 +489,12 @@ def send_alert_notification(
         logger.debug("WhatsApp alerts are paused. Skipping alert for patient %s.", patient_id)
         return {"enabled": True, "paused": True, "sent": 0, "failed": 0}
 
-    # Resolve recipients: explicit → DB → env fallback
-    if recipients is not None:
-        target = recipients
-    else:
-        target = get_patient_recipients(patient_id)
-        if not target:
-            logger.info("No DB recipients for patient %s, falling back to env recipients.", patient_id)
-            target = get_all_recipients()
+    # Strict recipient policy: assigned doctor only.
+    target = get_patient_recipients(patient_id)
 
     if not target:
-        logger.warning("No WhatsApp recipients configured. Skipping alert for patient %s.", patient_id)
-        return {"enabled": True, "sent": 0, "failed": 0, "reason": "no_recipients"}
+        logger.warning("No assigned doctor recipient for patient %s. Skipping alert.", patient_id)
+        return {"enabled": True, "sent": 0, "failed": 0, "reason": "no_assigned_doctor_recipient"}
 
     # v5.2: alert message now includes ACK instruction with alert_id
     message = _format_alert_message(
@@ -562,7 +538,7 @@ def send_escalation_notification(
     alert_id: int = None,
 ) -> dict:
     """Send a WhatsApp escalation alert. Idempotent with ESCALATION key.
-    Recipients resolved same as send_alert_notification (DB → env fallback).
+    Recipient resolution is strict: assigned doctor only.
     """
     if not WHATSAPP_ENABLED:
         return {"enabled": False, "sent": 0, "failed": 0}
@@ -571,17 +547,12 @@ def send_escalation_notification(
         logger.debug("WhatsApp alerts are paused. Skipping escalation for patient %s.", patient_id)
         return {"enabled": True, "paused": True, "sent": 0, "failed": 0}
 
-    # Resolve recipients: explicit → DB → env fallback
-    if recipients is not None:
-        target = recipients
-    else:
-        target = get_patient_recipients(patient_id)
-        if not target:
-            target = get_all_recipients()
+    # Strict recipient policy: assigned doctor only.
+    target = get_patient_recipients(patient_id)
 
     if not target:
-        logger.warning("No WhatsApp recipients configured. Skipping escalation.")
-        return {"enabled": True, "sent": 0, "failed": 0, "reason": "no_recipients"}
+        logger.warning("No assigned doctor recipient configured. Skipping escalation.")
+        return {"enabled": True, "sent": 0, "failed": 0, "reason": "no_assigned_doctor_recipient"}
 
     message = _format_escalation_message(
         alert_type=alert_type,
@@ -637,7 +608,7 @@ def get_config() -> dict:
     NOTE: `recipients` and `recipient_count` are kept for backward compatibility
     with the WhatsAppConfigOut schema and frontend. They show the env/API-configured
     fallback numbers. Actual alert recipients come from DB (patient's assigned
-    doctor/nurse phone) at send time — see get_patient_recipients().
+    doctor phone) at send time — see get_patient_recipients().
     """
     env_recipients = get_all_recipients()
     return {
@@ -648,7 +619,6 @@ def get_config() -> dict:
         "recipients": env_recipients,
         "recipient_count": len(env_recipients),
         "pending_acknowledgements": get_pending_count(),
-        "recipient_source": "database (doctor/nurse registration)",
-        "note": "Primary recipients are pulled from patient's assigned doctor/nurse phone in DB. The list above is env-var fallback only.",
+        "recipient_source": "database (assigned doctor registration)",
+        "note": "Primary recipients are pulled from the patient's assigned doctor phone in DB. The list above is for test/config use only.",
     }
-

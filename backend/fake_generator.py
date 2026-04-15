@@ -8,7 +8,6 @@ notifications when alerts are triggered.
 import logging
 import crud
 import models
-import alert_engine
 import whatsapp_notifier
 from data_sources import get_source
 
@@ -25,46 +24,9 @@ def save_fake(db, patient_id: int):
     # Persist vitals
     vital_record = crud.create_vitals(db=db, vital=data)
 
-    # Run alert engine on the saved record
-    triggered = alert_engine.check_alerts(vital_record)
+    triggered, new_alerts = crud.sync_alerts_for_vital(db=db, vital_record=vital_record)
 
-    # Auto-resolve: if a previously-triggered alert type is no longer triggered,
-    # mark its PENDING/ESCALATED alert as RESOLVED (vitals returned to normal)
-    if not triggered:
-        # All vitals are normal — resolve ALL pending/escalated alerts for this patient
-        pending = db.query(models.Alert).filter(
-            models.Alert.patient_id == patient_id,
-            models.Alert.status.in_(["PENDING", "ESCALATED"]),
-        ).all()
-        for old_alert in pending:
-            old_alert.status = "RESOLVED"
-            logger.info("Auto-resolved alert #%s (%s) for patient %s — vitals normal",
-                        old_alert.alert_id, old_alert.alert_type, patient_id)
-        if pending:
-            db.commit()
-    else:
-        # Some alerts triggered — resolve only the types that are no longer abnormal
-        triggered_set = set(triggered)
-        pending = db.query(models.Alert).filter(
-            models.Alert.patient_id == patient_id,
-            models.Alert.status.in_(["PENDING", "ESCALATED"]),
-            ~models.Alert.alert_type.in_(triggered_set),
-        ).all()
-        for old_alert in pending:
-            old_alert.status = "RESOLVED"
-            logger.info("Auto-resolved alert #%s (%s) for patient %s — vital normalized",
-                        old_alert.alert_id, old_alert.alert_type, patient_id)
-        if pending:
-            db.commit()
-
-    for alert_type in triggered:
-        alert = crud.create_alert(
-            db=db,
-            patient_id=patient_id,
-            vital_id=vital_record.vital_id,
-            alert_type=alert_type,
-        )
-
+    for alert in new_alerts:
         # Send WhatsApp notification for new alerts (not duplicates)
         if alert and alert.status == "PENDING":
             try:
@@ -77,12 +39,12 @@ def save_fake(db, patient_id: int):
 
                 # Check pause state BEFORE sending
                 if whatsapp_notifier.is_alerts_paused():
-                    logger.info("⏸️  WhatsApp PAUSED — skipping alert %s for patient %s", alert_type, patient_name)
+                    logger.info("⏸️  WhatsApp PAUSED — skipping alert %s for patient %s", alert.alert_type, patient_name)
                 else:
                     # FIX 13: Let send_alert_notification() resolve recipients from DB
                     # (patient's assigned doctor/nurse phones via get_patient_recipients)
                     whatsapp_notifier.send_alert_notification(
-                        alert_type=alert_type,
+                        alert_type=alert.alert_type,
                         patient_name=patient_name,
                         patient_id=patient_id,
                         room_number=room_number,

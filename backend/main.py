@@ -10,12 +10,12 @@ import time
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Depends, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from jose import JWTError, jwt
+from jose import JWTError, ExpiredSignatureError, jwt
 
 import auth
 import crud
@@ -26,6 +26,18 @@ from database import engine, Base, SessionLocal, require_redis_on_startup, get_r
 from json_logger import setup_logging, request_id_var, generate_request_id
 from rate_limiter import limiter, setup_rate_limiter, LOGIN_LIMIT
 from exception_handlers import setup_exception_handlers
+from logger import log_security_event, request_ip, sanitize_headers
+from security_utils import (
+    FAILED_LOGIN_BLOCK_SECONDS,
+    bind_refresh_session,
+    can_access_patient_abac,
+    clear_refresh_session,
+    detect_suspicious_refresh_activity,
+    is_ip_blocked,
+    register_failed_login,
+    reset_failed_login,
+    validate_refresh_request,
+)
 
 # ── Setup structured logging ─────────────────────────────────────────────────
 setup_logging()
@@ -40,9 +52,13 @@ logger = logging.getLogger(__name__)
 
 # ── WebSocket config ──────────────────────────────────────────────────────────
 WS_CONNECTION_LIMIT = int(os.getenv("WS_CONNECTION_LIMIT", "50"))
+WS_USER_CONNECTION_LIMIT = int(os.getenv("WS_USER_CONNECTION_LIMIT", "5"))
 WS_MESSAGES_PER_MINUTE = int(os.getenv("WS_MESSAGES_PER_MINUTE", "120"))
+WS_MESSAGES_PER_SECOND = int(os.getenv("WS_MESSAGES_PER_SECOND", "10"))
 WS_BROADCAST_MODE = os.getenv("WS_BROADCAST_MODE", "event")  # "event" (incremental) or "full"
 WS_REDIS_CHANNEL = "iot:vitals"
+ALLOW_ADMIN_ALERT_ACK = os.getenv("ALLOW_ADMIN_ALERT_ACK", "false").lower() in ("1", "true", "yes")
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
 
 # ── Basic Prometheus-compatible metrics (no external dependency) ─────────────
 APP_STARTED_AT = time.time()
@@ -93,6 +109,35 @@ async def request_id_middleware(request: Request, call_next):
         HTTP_REQUEST_ERRORS_TOTAL += 1
     HTTP_REQUEST_DURATION_SECONDS_SUM += max(0.0, time.perf_counter() - started)
     response.headers["X-Request-ID"] = req_id
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    logger.info(
+        "REQUEST_LOG",
+        extra={
+            "action": "request_log",
+            "extra_data": {
+                "event": "REQUEST_LOG",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "response_time_ms": duration_ms,
+                "ip": request_ip(request),
+                "headers": sanitize_headers({"Authorization": request.headers.get("authorization", "")}),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        },
+    )
+    return response
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'; base-uri 'self';"
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").lower() == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
@@ -103,6 +148,69 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _set_refresh_cookie(response: Response, refresh_token: str):
+    response.set_cookie(
+        key=auth.REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path="/",
+    )
+
+
+def _clear_refresh_cookie(response: Response):
+    response.delete_cookie(key=auth.REFRESH_COOKIE_NAME, path="/")
+
+
+def filter_response_by_role(current_user: models.User, data):
+    """Hide internal metadata from non-admin patient and vitals responses."""
+    if current_user.role == "ADMIN":
+        return data
+
+    def _filter_patient(item):
+        d = {
+            "patient_id": item.patient_id,
+            "name": item.name,
+            "age": item.age,
+            "room_number": item.room_number,
+            "doctor_name": getattr(item, "doctor_name", None),
+            "nurse_name": getattr(item, "nurse_name", None),
+            "hospital_name": getattr(item, "hospital_name", None),
+            "hospital_id": None,
+            "assigned_doctor": None,
+            "assigned_nurse": None,
+        }
+        return d
+
+    def _filter_vital(item):
+        return {
+            "vital_id": None,
+            "patient_id": item.patient_id,
+            "heart_rate": item.heart_rate,
+            "spo2": item.spo2,
+            "temperature": item.temperature,
+            "timestamp": item.timestamp,
+        }
+
+    if isinstance(data, list):
+        if not data:
+            return data
+        sample = data[0]
+        if hasattr(sample, "heart_rate") and hasattr(sample, "spo2"):
+            return [_filter_vital(v) for v in data]
+        if hasattr(sample, "room_number") and hasattr(sample, "age"):
+            return [_filter_patient(p) for p in data]
+        return data
+
+    if hasattr(data, "heart_rate") and hasattr(data, "spo2"):
+        return _filter_vital(data)
+    if hasattr(data, "room_number") and hasattr(data, "age"):
+        return _filter_patient(data)
+    return data
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -124,12 +232,12 @@ def register(
         db, body.username, body.password, body.role,
         doctor_id=body.doctor_id, nurse_id=body.nurse_id,
     )
-    crud.write_audit(db, "REGISTER", "user", entity_id=user.user_id)
+    crud.write_audit(db, "REGISTER", "user", entity_id=user.user_id, user_id=current_user.user_id)
     return user
 
 
 @app.post("/auth/register/doctor", response_model=schemas.TokenResponse, tags=["Auth"])
-def register_doctor(body: schemas.DoctorSelfRegister, db: Session = Depends(get_db)):
+def register_doctor(body: schemas.DoctorSelfRegister, response: Response, request: Request, db: Session = Depends(get_db)):
     """
     Self-registration for freelancer doctors.
     Creates a Doctor record + User account, then returns a JWT.
@@ -153,9 +261,22 @@ def register_doctor(body: schemas.DoctorSelfRegister, db: Session = Depends(get_
 
     # Create User linked to this doctor
     user = auth.create_user(db, body.username, body.password, "DOCTOR", doctor_id=doctor.doctor_id)
-    crud.write_audit(db, "SELF_REGISTER", "doctor", entity_id=doctor.doctor_id)
+    crud.write_audit(db, "SELF_REGISTER", "doctor", entity_id=doctor.doctor_id, user_id=user.user_id)
 
-    token = auth.create_access_token({"sub": user.username, "role": user.role})
+    token, refresh_token = auth.issue_token_pair(user)
+    access_payload = auth.decode_token(token, expected_type="access")
+    refresh_payload = auth.decode_token(refresh_token, expected_type="refresh")
+    revoked = bind_refresh_session(
+        user.user_id,
+        refresh_jti=refresh_payload["jti"],
+        access_jti=access_payload["jti"],
+        ip_address=request_ip(request),
+        user_agent=request.headers.get("user-agent", ""),
+        expires_at=refresh_payload["exp"],
+    )
+    for jti in revoked:
+        auth.revoke_token_jti(jti, refresh_payload["exp"])
+    _set_refresh_cookie(response, refresh_token)
     return schemas.TokenResponse(
         access_token=token, role=user.role, username=user.username,
         doctor_id=doctor.doctor_id,
@@ -163,7 +284,7 @@ def register_doctor(body: schemas.DoctorSelfRegister, db: Session = Depends(get_
 
 
 @app.post("/auth/register/nurse", response_model=schemas.TokenResponse, tags=["Auth"])
-def register_nurse(body: schemas.NurseSelfRegister, db: Session = Depends(get_db)):
+def register_nurse(body: schemas.NurseSelfRegister, response: Response, request: Request, db: Session = Depends(get_db)):
     """
     Self-registration for nurses.
     Creates a Nurse record + User account, then returns a JWT.
@@ -185,9 +306,22 @@ def register_nurse(body: schemas.NurseSelfRegister, db: Session = Depends(get_db
 
     # Create User linked to this nurse
     user = auth.create_user(db, body.username, body.password, "NURSE", nurse_id=nurse.nurse_id)
-    crud.write_audit(db, "SELF_REGISTER", "nurse", entity_id=nurse.nurse_id)
+    crud.write_audit(db, "SELF_REGISTER", "nurse", entity_id=nurse.nurse_id, user_id=user.user_id)
 
-    token = auth.create_access_token({"sub": user.username, "role": user.role})
+    token, refresh_token = auth.issue_token_pair(user)
+    access_payload = auth.decode_token(token, expected_type="access")
+    refresh_payload = auth.decode_token(refresh_token, expected_type="refresh")
+    revoked = bind_refresh_session(
+        user.user_id,
+        refresh_jti=refresh_payload["jti"],
+        access_jti=access_payload["jti"],
+        ip_address=request_ip(request),
+        user_agent=request.headers.get("user-agent", ""),
+        expires_at=refresh_payload["exp"],
+    )
+    for jti in revoked:
+        auth.revoke_token_jti(jti, refresh_payload["exp"])
+    _set_refresh_cookie(response, refresh_token)
     return schemas.TokenResponse(
         access_token=token, role=user.role, username=user.username,
         nurse_id=nurse.nurse_id,
@@ -196,15 +330,44 @@ def register_nurse(body: schemas.NurseSelfRegister, db: Session = Depends(get_db
 
 @app.post("/auth/login", response_model=schemas.TokenResponse, tags=["Auth"])
 @limiter.limit(LOGIN_LIMIT)
-def login(body: schemas.LoginRequest, request: Request, db: Session = Depends(get_db)):
+def login(body: schemas.LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    client_ip = request_ip(request)
+    if is_ip_blocked(client_ip):
+        log_security_event(
+            "BRUTE_FORCE_BLOCKED",
+            request=request,
+            user=body.username,
+            block_seconds=FAILED_LOGIN_BLOCK_SECONDS,
+        )
+        raise HTTPException(status_code=429, detail="Too many failed login attempts. Try again later.")
+
     user = auth.get_user_by_username(db, body.username)
     if not user or not auth.verify_password(body.password, user.password_hash):
-        logger.warning("Failed login attempt for username: %s", body.username,
-                        extra={"action": "login_failed"})
+        attempts = register_failed_login(client_ip)
+        log_security_event(
+            "FAILED_LOGIN",
+            request=request,
+            user=body.username,
+            attempts=attempts,
+        )
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = auth.create_access_token({"sub": user.username, "role": user.role})
-    crud.write_audit(db, "LOGIN", "user", entity_id=user.user_id)
+    reset_failed_login(client_ip)
+    token, refresh_token = auth.issue_token_pair(user)
+    access_payload = auth.decode_token(token, expected_type="access")
+    refresh_payload = auth.decode_token(refresh_token, expected_type="refresh")
+    revoked = bind_refresh_session(
+        user.user_id,
+        refresh_jti=refresh_payload["jti"],
+        access_jti=access_payload["jti"],
+        ip_address=client_ip,
+        user_agent=request.headers.get("user-agent", ""),
+        expires_at=refresh_payload["exp"],
+    )
+    for jti in revoked:
+        auth.revoke_token_jti(jti, refresh_payload["exp"])
+    _set_refresh_cookie(response, refresh_token)
+    crud.write_audit(db, "LOGIN", "user", entity_id=user.user_id, user_id=user.user_id)
     logger.info("User logged in: %s (role: %s)", user.username, user.role,
                 extra={"action": "login_success"})
 
@@ -217,6 +380,111 @@ def login(body: schemas.LoginRequest, request: Request, db: Session = Depends(ge
 @app.get("/auth/me", response_model=schemas.UserOut, tags=["Auth"])
 def me(current_user: models.User = Depends(auth.require_auth)):
     return current_user
+
+
+@app.post("/auth/refresh", response_model=schemas.TokenResponse, tags=["Auth"])
+def refresh_auth_token(response: Response, request: Request, db: Session = Depends(get_db)):
+    refresh_token = request.cookies.get(auth.REFRESH_COOKIE_NAME)
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
+
+    try:
+        payload = auth.decode_token(refresh_token, expected_type="refresh")
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    if not payload or auth.is_token_revoked(payload.get("jti")):
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    username = payload.get("sub")
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    user = auth.get_user_by_username(db, username)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    client_ip = request_ip(request)
+    allowed, status_code, reason = validate_refresh_request(
+        user.user_id,
+        refresh_jti=payload.get("jti"),
+        ip_address=client_ip,
+        user_agent=request.headers.get("user-agent", ""),
+    )
+    if not allowed:
+        if reason.startswith("token_theft_"):
+            log_security_event(
+                "TOKEN_THEFT_SUSPECTED",
+                request=request,
+                user=user.username,
+                reason=reason,
+            )
+            raise HTTPException(status_code=403, detail="Refresh token binding mismatch")
+        raise HTTPException(status_code=status_code, detail="Invalid refresh token")
+
+    anomaly_reasons = detect_suspicious_refresh_activity(user.user_id, client_ip)
+    if anomaly_reasons:
+        log_security_event(
+            "SUSPICIOUS_ACTIVITY",
+            request=request,
+            user=user.username,
+            reasons=",".join(anomaly_reasons),
+        )
+
+    auth.revoke_token_jti(payload.get("jti"), payload.get("exp"))
+    access_token, new_refresh = auth.issue_token_pair(user)
+    new_access_payload = auth.decode_token(access_token, expected_type="access")
+    new_payload = auth.decode_token(new_refresh, expected_type="refresh")
+    revoked = bind_refresh_session(
+        user.user_id,
+        refresh_jti=new_payload["jti"],
+        access_jti=new_access_payload["jti"],
+        ip_address=client_ip,
+        user_agent=request.headers.get("user-agent", ""),
+        expires_at=new_payload["exp"],
+    )
+    for jti in revoked:
+        auth.revoke_token_jti(jti, new_payload["exp"])
+    _set_refresh_cookie(response, new_refresh)
+
+    return schemas.TokenResponse(
+        access_token=access_token,
+        role=user.role,
+        username=user.username,
+        doctor_id=user.doctor_id,
+        nurse_id=user.nurse_id,
+    )
+
+
+@app.post("/auth/logout", tags=["Auth"])
+def logout(
+    response: Response,
+    request: Request,
+    token: str = Depends(auth.require_token),
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
+    try:
+        payload = auth.decode_token(token, expected_type="access")
+        if payload:
+            auth.revoke_token_jti(payload.get("jti"), payload.get("exp"))
+    except JWTError:
+        pass
+
+    refresh_token = request.cookies.get(auth.REFRESH_COOKIE_NAME)
+    if refresh_token:
+        try:
+            refresh_payload = auth.decode_token(refresh_token, expected_type="refresh", verify_exp=False)
+            if refresh_payload:
+                auth.revoke_token_jti(refresh_payload.get("jti"), refresh_payload.get("exp"))
+                clear_refresh_session(current_user.user_id, refresh_payload.get("jti"))
+        except JWTError:
+            pass
+    _clear_refresh_cookie(response)
+    crud.write_audit(db, "LOGOUT", "user", entity_id=current_user.user_id, user_id=current_user.user_id)
+    return {"detail": "Logged out"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -261,7 +529,7 @@ def create_doctor(
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
         if auth.get_user_by_username(db, doctor.username):
             raise HTTPException(status_code=400, detail="Username already taken")
-    return crud.create_doctor(db, doctor)
+    return crud.create_doctor(db, doctor, user_id=current_user.user_id)
 
 
 @app.get("/doctors/{doctor_id}", response_model=schemas.DoctorOut, tags=["Doctors"])
@@ -284,7 +552,7 @@ def delete_doctor(
     current_user: models.User = Depends(auth.require_role("ADMIN")),
     db: Session = Depends(get_db),
 ):
-    d = crud.delete_doctor(db, doctor_id)
+    d = crud.delete_doctor(db, doctor_id, user_id=current_user.user_id)
     if not d:
         raise HTTPException(status_code=404, detail="Doctor not found")
     return {"detail": "Doctor deleted successfully"}
@@ -296,7 +564,12 @@ def list_doctor_patients(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    return crud.get_patients(db, doctor_id=doctor_id)
+    if current_user.role == "DOCTOR" and current_user.doctor_id != doctor_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access these patients")
+    if current_user.role == "NURSE":
+        raise HTTPException(status_code=403, detail="Not authorized to access these patients")
+    patients = crud.get_patients(db, doctor_id=doctor_id)
+    return filter_response_by_role(current_user, patients)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -322,7 +595,7 @@ def create_nurse(
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
         if auth.get_user_by_username(db, nurse.username):
             raise HTTPException(status_code=400, detail="Username already taken")
-    return crud.create_nurse(db, nurse)
+    return crud.create_nurse(db, nurse, user_id=current_user.user_id)
 
 
 @app.get("/nurses/{nurse_id}", response_model=schemas.NurseOut, tags=["Nurses"])
@@ -345,7 +618,7 @@ def delete_nurse(
     current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR")),
     db: Session = Depends(get_db),
 ):
-    n = crud.delete_nurse(db, nurse_id)
+    n = crud.delete_nurse(db, nurse_id, user_id=current_user.user_id)
     if not n:
         raise HTTPException(status_code=404, detail="Nurse not found")
     return {"detail": "Nurse deleted successfully"}
@@ -357,7 +630,12 @@ def list_nurse_patients(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    return crud.get_patients(db, nurse_id=nurse_id)
+    if current_user.role == "NURSE" and current_user.nurse_id != nurse_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access these patients")
+    if current_user.role == "DOCTOR":
+        raise HTTPException(status_code=403, detail="Not authorized to access these patients")
+    patients = crud.get_patients(db, nurse_id=nurse_id)
+    return filter_response_by_role(current_user, patients)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -370,7 +648,23 @@ def list_patients(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    return crud.get_patients(db, doctor_id=doctor_id, nurse_id=nurse_id)
+    if current_user.role == "DOCTOR":
+        if not current_user.doctor_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these patients")
+        if doctor_id and doctor_id != current_user.doctor_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these patients")
+        doctor_id = current_user.doctor_id
+        nurse_id = None
+    elif current_user.role == "NURSE":
+        if not current_user.nurse_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these patients")
+        if nurse_id and nurse_id != current_user.nurse_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these patients")
+        if doctor_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these patients")
+        nurse_id = current_user.nurse_id
+    patients = crud.get_patients(db, doctor_id=doctor_id, nurse_id=nurse_id)
+    return filter_response_by_role(current_user, patients)
 
 
 @app.post("/patients", response_model=schemas.PatientOut, tags=["Patients"])
@@ -379,7 +673,7 @@ def create_patient(
     current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
-    return crud.create_patient(db, patient)
+    return crud.create_patient(db, patient, user_id=current_user.user_id)
 
 
 @app.get("/patients/{patient_id}", response_model=schemas.PatientOut, tags=["Patients"])
@@ -391,7 +685,8 @@ def get_patient(
     p = crud.get_patient(db, patient_id)
     if not p:
         raise HTTPException(status_code=404, detail="Patient not found")
-    return p
+    check_patient_access(db, current_user, p)
+    return filter_response_by_role(current_user, p)
 
 
 @app.delete("/patients/{patient_id}", tags=["Patients"],
@@ -402,7 +697,11 @@ def delete_patient(
     current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR")),
     db: Session = Depends(get_db),
 ):
-    p = crud.delete_patient(db, patient_id)
+    p = crud.get_patient(db, patient_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    check_patient_access(db, current_user, p)
+    p = crud.delete_patient(db, patient_id, user_id=current_user.user_id)
     if not p:
         raise HTTPException(status_code=404, detail="Patient not found")
     return {"detail": "Patient deleted successfully"}
@@ -412,7 +711,7 @@ def delete_patient(
 def assign_doctor(
     patient_id: int,
     body: schemas.AssignDoctor,
-    current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR", "NURSE")),
+    current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR")),
     db: Session = Depends(get_db),
 ):
     p = crud.assign_doctor(db, patient_id, body.doctor_id)
@@ -443,7 +742,9 @@ def create_vitals(
     current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
-    return crud.create_vitals(db=db, vital=vital)
+    db_vital = crud.create_vitals(db=db, vital=vital)
+    crud.sync_alerts_for_vital(db=db, vital_record=db_vital)
+    return db_vital
 
 
 @app.get("/vitals", response_model=List[schemas.VitalsOut], tags=["Vitals"])
@@ -455,7 +756,31 @@ def get_vitals(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    return crud.get_vitals(db, patient_id=patient_id, doctor_id=doctor_id, limit=limit, offset=offset)
+    if patient_id is not None:
+        p = crud.get_patient(db, patient_id)
+        if not p:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        check_patient_access(db, current_user, p)
+        vitals = crud.get_vitals(db, patient_id=patient_id, limit=limit, offset=offset)
+        return filter_response_by_role(current_user, vitals)
+
+    if current_user.role == "ADMIN":
+        return crud.get_vitals(db, doctor_id=doctor_id, limit=limit, offset=offset)
+    if current_user.role == "DOCTOR":
+        if not current_user.doctor_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these vitals")
+        if doctor_id and doctor_id != current_user.doctor_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these vitals")
+        vitals = crud.get_vitals(db, doctor_id=current_user.doctor_id, limit=limit, offset=offset)
+        return filter_response_by_role(current_user, vitals)
+    if current_user.role == "NURSE":
+        if not current_user.nurse_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these vitals")
+        if doctor_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these vitals")
+        vitals = crud.get_vitals(db, nurse_id=current_user.nurse_id, limit=limit, offset=offset)
+        return filter_response_by_role(current_user, vitals)
+    raise HTTPException(status_code=403, detail="Not authorized to access these vitals")
 
 
 @app.get("/vitals/latest/{patient_id}", response_model=schemas.VitalsOut, tags=["Vitals"])
@@ -464,10 +789,14 @@ def get_latest_vital(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
+    p = crud.get_patient(db, patient_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    check_patient_access(db, current_user, p)
     v = crud.get_latest_vital(db, patient_id)
     if not v:
         raise HTTPException(status_code=404, detail="No vitals found for this patient")
-    return v
+    return filter_response_by_role(current_user, v)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -489,10 +818,17 @@ def get_alerts(
 def acknowledge_alert(
     alert_id: int,
     body: schemas.AlertAcknowledge,
-    current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR")),
+    current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    alert = crud.acknowledge_alert(db, alert_id, body.acknowledged_by)
+    _ = body
+    check_alert_ownership(db, alert_id, current_user)
+    alert = crud.acknowledge_alert(
+        db=db,
+        alert_id=alert_id,
+        current_user=current_user,
+        allow_admin_override=ALLOW_ADMIN_ALERT_ACK,
+    )
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
     return alert
@@ -559,17 +895,40 @@ def dashboard_stats(
 #  CHAT ENDPOINTS  (per-patient treatment chat — v5.2: authorization check)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _check_chat_access(current_user: models.User, patient, db: Session):
-    """v5.2 FIX 6: Only ADMIN, assigned doctor, or assigned nurse can access chat."""
-    if current_user.role == "ADMIN":
-        return
-    if current_user.doctor_id and patient.assigned_doctor == current_user.doctor_id:
-        return
-    if current_user.nurse_id and patient.assigned_nurse == current_user.nurse_id:
+def check_patient_access(db: Session, current_user: models.User, patient: models.Patient):
+    """ABAC: ADMIN full; DOCTOR assigned or same hospital; NURSE assigned only."""
+    if can_access_patient_abac(db, current_user, patient):
         return
     raise HTTPException(
         status_code=403,
-        detail="You are not assigned to this patient. Only ADMIN, assigned doctor, or assigned nurse can access patient chat.",
+        detail="Not authorized to access this patient",
+    )
+
+
+def check_alert_ownership(db: Session, alert_id: int, current_user: models.User):
+    """Only the assigned doctor can acknowledge alerts (admin only if explicitly enabled)."""
+    alert = db.query(models.Alert).filter(models.Alert.alert_id == alert_id).first()
+    if not alert:
+        return
+
+    patient = db.query(models.Patient).filter(models.Patient.patient_id == alert.patient_id).first()
+    if not patient:
+        return
+
+    if current_user.role == "DOCTOR":
+        if not current_user.doctor_id or patient.assigned_doctor != current_user.doctor_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Not authorized to acknowledge this alert",
+            )
+        return
+
+    if current_user.role == "ADMIN" and ALLOW_ADMIN_ALERT_ACK:
+        return
+
+    raise HTTPException(
+        status_code=403,
+        detail="Not authorized to acknowledge this alert",
     )
 
 
@@ -583,7 +942,7 @@ def get_patient_chat(
     p = crud.get_patient(db, patient_id)
     if not p:
         raise HTTPException(status_code=404, detail="Patient not found")
-    _check_chat_access(current_user, p, db)
+    check_patient_access(db, current_user, p)
     return crud.get_chat_messages(db, patient_id, limit=limit)
 
 
@@ -597,7 +956,7 @@ def post_patient_chat(
     p = crud.get_patient(db, patient_id)
     if not p:
         raise HTTPException(status_code=404, detail="Patient not found")
-    _check_chat_access(current_user, p, db)
+    check_patient_access(db, current_user, p)
     msg = crud.create_chat_message(
         db,
         patient_id=patient_id,
@@ -630,24 +989,47 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
         self._ip_counts: dict[str, int] = {}
+        self._user_counts: dict[str, int] = {}
         self._msg_counts: dict[str, int] = {}
         self._msg_reset_time: dict[str, float] = {}
+        self._conn_msg_times: dict[int, list[float]] = {}
 
-    async def connect(self, ws: WebSocket, client_ip: str = "unknown"):
+    async def connect(self, ws: WebSocket, client_ip: str = "unknown", user_key: str = "unknown"):
         current = self._ip_counts.get(client_ip, 0)
         if current >= WS_CONNECTION_LIMIT:
             await ws.close(code=1008, reason="Too many WebSocket connections from this IP")
             return False
+        user_current = self._user_counts.get(user_key, 0)
+        if user_current >= WS_USER_CONNECTION_LIMIT:
+            await ws.close(code=1008, reason="Too many WebSocket connections for this user")
+            return False
         await ws.accept()
         self.active_connections.append(ws)
         self._ip_counts[client_ip] = current + 1
+        self._user_counts[user_key] = user_current + 1
+        self._conn_msg_times[id(ws)] = []
         return True
 
-    def disconnect(self, ws: WebSocket, client_ip: str = "unknown"):
+    def disconnect(self, ws: WebSocket, client_ip: str = "unknown", user_key: str = "unknown"):
         if ws in self.active_connections:
             self.active_connections.remove(ws)
         current = self._ip_counts.get(client_ip, 1)
         self._ip_counts[client_ip] = max(0, current - 1)
+        user_current = self._user_counts.get(user_key, 1)
+        self._user_counts[user_key] = max(0, user_current - 1)
+        self._conn_msg_times.pop(id(ws), None)
+
+    def check_connection_message_rate(self, ws: WebSocket) -> bool:
+        now = time.time()
+        key = id(ws)
+        times = self._conn_msg_times.get(key, [])
+        times = [t for t in times if now - t <= 1.0]
+        if len(times) >= WS_MESSAGES_PER_SECOND:
+            self._conn_msg_times[key] = times
+            return False
+        times.append(now)
+        self._conn_msg_times[key] = times
+        return True
 
     def check_message_rate(self, client_ip: str) -> bool:
         """Return True if message can be sent, False if rate limited."""
@@ -718,16 +1100,25 @@ async def startup_redis_subscriber():
         logger.info("Redis pub/sub WebSocket subscriber started (v5.2 event-driven)")
 
 
-def _get_ws_user(token: str, db: Session) -> Optional[models.User]:
+def _get_ws_user(token: str, db: Session) -> tuple[Optional[models.User], Optional[str]]:
     """Resolve a WebSocket user from a JWT token."""
     try:
-        payload = jwt.decode(token, auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
+        payload = auth.decode_token(token, expected_type="access")
+        if payload is None:
+            return None, "invalid"
+        if auth.is_token_revoked(payload.get("jti")):
+            return None, "revoked"
         username = payload.get("sub")
         if not username:
-            return None
+            return None, "invalid"
+    except ExpiredSignatureError:
+        return None, "expired"
     except JWTError:
-        return None
-    return db.query(models.User).filter(models.User.username == username).first()
+        return None, "invalid"
+    user = db.query(models.User).filter(models.User.username == username).first()
+    if not user:
+        return None, "invalid"
+    return user, None
 
 
 @app.websocket("/ws/vitals")
@@ -743,23 +1134,29 @@ async def ws_vitals(websocket: WebSocket):
             token = auth_header.split(" ", 1)[1].strip()
 
     if not token:
+        log_security_event("WEBSOCKET_AUTH_FAILURE", request=None, ip=request_ip(None), reason="missing_token")
         await websocket.accept()
         await websocket.close(code=1008, reason="Missing auth token")
         return
 
     db = SessionLocal()
     try:
-        user = _get_ws_user(token, db)
+        user, token_error = _get_ws_user(token, db)
     finally:
         db.close()
 
     if not user:
+        log_security_event("WEBSOCKET_AUTH_FAILURE", request=None, ip=websocket.client.host if websocket.client else "unknown", reason=token_error or "invalid")
         await websocket.accept()
-        await websocket.close(code=1008, reason="Invalid auth token")
+        if token_error == "expired":
+            await websocket.close(code=1008, reason="Expired auth token")
+        else:
+            await websocket.close(code=1008, reason="Invalid auth token")
         return
 
     client_ip = websocket.client.host if websocket.client else "unknown"
-    accepted = await manager.connect(websocket, client_ip)
+    user_key = str(user.user_id)
+    accepted = await manager.connect(websocket, client_ip, user_key)
     if not accepted:
         return
 
@@ -771,6 +1168,15 @@ async def ws_vitals(websocket: WebSocket):
                 # Wait for client messages (ping/pong keepalive)
                 try:
                     await asyncio.wait_for(websocket.receive_text(), timeout=30)
+                    if not manager.check_connection_message_rate(websocket):
+                        log_security_event(
+                            "WEBSOCKET_RATE_LIMIT_HIT",
+                            request=None,
+                            ip=client_ip,
+                            user=user.username,
+                        )
+                        await websocket.close(code=1008, reason="WebSocket message rate limit exceeded")
+                        break
                 except asyncio.TimeoutError:
                     # Send a ping to keep alive
                     try:
@@ -803,11 +1209,11 @@ async def ws_vitals(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        manager.disconnect(websocket, client_ip)
+        manager.disconnect(websocket, client_ip, user_key)
 
 
 @app.get("/metrics", tags=["Monitoring"])
-def metrics():
+def metrics(current_user: models.User = Depends(auth.require_role("ADMIN"))):
     """Prometheus scrape endpoint for basic HTTP/runtime metrics."""
     uptime = max(0.0, time.time() - APP_STARTED_AT)
     lines = [
@@ -947,11 +1353,17 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
                 clean_sender = sender_phone.strip().lstrip("+")
                 if clean_doc_phone[-10:] != clean_sender[-10:]:
                     logger.warning("ACK from non-assigned doctor %s for alert #%s", sender_phone, target_alert_id)
-                    # Still allow — doctor may be escalated-to doctor
+                    return {"status": "forbidden", "detail": "Not authorized to acknowledge this alert"}
+            else:
+                return {"status": "forbidden", "detail": "Not authorized to acknowledge this alert"}
 
             alert.status = "ACKNOWLEDGED"
+            doctor_user = db.query(models.User).filter(models.User.doctor_id == patient.assigned_doctor).first() if patient else None
+            alert.acknowledged_by = doctor_user.user_id if doctor_user else None
             alert.acknowledged_at = datetime.now(timezone.utc)
             db.commit()
+            if doctor_user:
+                crud.write_audit(db, "ACKNOWLEDGE", "alert", entity_id=target_alert_id, user_id=doctor_user.user_id)
 
             # Remove from pending tracker
             whatsapp_notifier.acknowledge_alert_by_id(target_alert_id, sender_phone)
@@ -967,20 +1379,45 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
 
         elif text_upper in ("ACK", "1", "ACKNOWLEDGE", "OK", "YES"):
             # Backward compatible: acknowledge all/latest pending alerts for this doctor
-            acknowledged_ids = whatsapp_notifier.acknowledge_by_phone(sender_phone)
+            candidate_ids = whatsapp_notifier.acknowledge_by_phone(sender_phone)
+            acknowledged_ids: list[int] = []
 
-            if acknowledged_ids:
-                for alert_id in acknowledged_ids:
+            if candidate_ids:
+                for alert_id in candidate_ids:
                     alert = db.query(models.Alert).filter(
                         models.Alert.alert_id == alert_id
                     ).first()
                     if alert and alert.status in ("PENDING", "ESCALATED"):
+                        patient = db.query(models.Patient).filter(
+                            models.Patient.patient_id == alert.patient_id
+                        ).first()
+                        doctor = None
+                        doctor_user = None
+                        if patient and patient.assigned_doctor:
+                            doctor = db.query(models.Doctor).filter(
+                                models.Doctor.doctor_id == patient.assigned_doctor
+                            ).first()
+                            doctor_user = db.query(models.User).filter(
+                                models.User.doctor_id == patient.assigned_doctor
+                            ).first()
+                        if not doctor or not doctor.phone:
+                            continue
+                        clean_doc_phone = doctor.phone.strip().lstrip("+")
+                        clean_sender = sender_phone.strip().lstrip("+")
+                        if clean_doc_phone[-10:] != clean_sender[-10:]:
+                            continue
+
                         alert.status = "ACKNOWLEDGED"
+                        alert.acknowledged_by = doctor_user.user_id if doctor_user else None
                         alert.acknowledged_at = datetime.now(timezone.utc)
                         db.commit()
+                        acknowledged_ids.append(alert_id)
+                        if doctor_user:
+                            crud.write_audit(db, "ACKNOWLEDGE", "alert", entity_id=alert_id, user_id=doctor_user.user_id)
                         logger.info("Alert #%s marked ACKNOWLEDGED via WhatsApp by %s",
                                     alert_id, sender_phone)
 
+            if acknowledged_ids:
                 doctor = db.query(models.Doctor).filter(
                     models.Doctor.phone.like(f"%{sender_phone[-10:]}%")
                 ).first()
@@ -1022,18 +1459,21 @@ def health():
 
 
 @app.get("/health/db", response_model=schemas.HealthDetail, tags=["Health"])
-def health_db(db: Session = Depends(get_db)):
+def health_db(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+):
     """Check database connectivity."""
     try:
         db.execute(text("SELECT 1"))
         return {"status": "ok", "detail": "PostgreSQL reachable"}
     except Exception as e:
         logger.error("DB health check failed: %s", e)
-        return {"status": "degraded", "detail": str(e)}
+        return {"status": "degraded", "detail": "Database connectivity check failed"}
 
 
 @app.get("/health/redis", response_model=schemas.HealthDetail, tags=["Health"])
-def health_redis():
+def health_redis(current_user: models.User = Depends(auth.require_role("ADMIN"))):
     """Check Redis connectivity."""
     try:
         r = get_redis_client()
@@ -1047,7 +1487,7 @@ def health_redis():
 
 
 @app.get("/health/whatsapp", response_model=schemas.HealthDetail, tags=["Health"])
-def health_whatsapp():
+def health_whatsapp(current_user: models.User = Depends(auth.require_role("ADMIN"))):
     """Check WhatsApp GREEN-API connectivity."""
     try:
         config = whatsapp_notifier.get_config()
@@ -1056,12 +1496,15 @@ def health_whatsapp():
         if not config["credentials_set"]:
             return {"status": "degraded", "detail": "GREEN-API credentials not configured"}
         return {"status": "ok", "detail": f"{config['recipient_count']} recipients configured"}
-    except Exception as e:
-        return {"status": "degraded", "detail": str(e)}
+    except Exception:
+        return {"status": "degraded", "detail": "WhatsApp connectivity check failed"}
 
 
 @app.get("/health/full", response_model=schemas.HealthCheckOut, tags=["Health"])
-def health_full(db: Session = Depends(get_db)):
+def health_full(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+):
     """Comprehensive health check of all services."""
     db_health = health_db(db)
     redis_health = health_redis()
@@ -1093,5 +1536,3 @@ def list_whatsapp_logs(
     db: Session = Depends(get_db),
 ):
     return crud.get_whatsapp_logs(db, limit=limit, offset=offset)
-
-

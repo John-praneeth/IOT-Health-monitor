@@ -5,11 +5,13 @@ crud.py  –  Database operations for the Patient Monitor system.
 import os
 import logging
 from datetime import datetime, timedelta
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 import models
 import schemas
 import whatsapp_notifier
+import alert_engine
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +45,78 @@ def create_vitals(db: Session, vital):
     return db_vital
 
 
-def get_vitals(db: Session, patient_id: int = None, doctor_id: int = None, limit: int = 50, offset: int = 0):
+def sync_alerts_for_vital(db: Session, vital_record: models.Vitals):
+    """
+    Evaluate thresholds for a saved vital row and synchronize alert state.
+    Returns tuple: (triggered_types, new_alerts).
+    """
+    patient_id = vital_record.patient_id
+    triggered = alert_engine.check_alerts(vital_record)
+
+    if not triggered:
+        pending = db.query(models.Alert).filter(
+            models.Alert.patient_id == patient_id,
+            models.Alert.status.in_(["PENDING", "ESCALATED"]),
+        ).all()
+        for old_alert in pending:
+            old_alert.status = "RESOLVED"
+            logger.info(
+                "Auto-resolved alert #%s (%s) for patient %s — vitals normal",
+                old_alert.alert_id,
+                old_alert.alert_type,
+                patient_id,
+            )
+        if pending:
+            db.commit()
+        return triggered, []
+
+    triggered_set = set(triggered)
+    pending = db.query(models.Alert).filter(
+        models.Alert.patient_id == patient_id,
+        models.Alert.status.in_(["PENDING", "ESCALATED"]),
+        ~models.Alert.alert_type.in_(triggered_set),
+    ).all()
+    for old_alert in pending:
+        old_alert.status = "RESOLVED"
+        logger.info(
+            "Auto-resolved alert #%s (%s) for patient %s — vital normalized",
+            old_alert.alert_id,
+            old_alert.alert_type,
+            patient_id,
+        )
+    if pending:
+        db.commit()
+
+    new_alerts = []
+    for alert_type in triggered:
+        alert = create_alert(
+            db=db,
+            patient_id=patient_id,
+            vital_id=vital_record.vital_id,
+            alert_type=alert_type,
+        )
+        if alert:
+            new_alerts.append(alert)
+
+    return triggered, new_alerts
+
+
+def get_vitals(
+    db: Session,
+    patient_id: int = None,
+    doctor_id: int = None,
+    nurse_id: int = None,
+    limit: int = 50,
+    offset: int = 0,
+):
     q = db.query(models.Vitals)
     if patient_id:
         q = q.filter(models.Vitals.patient_id == patient_id)
     if doctor_id:
         patient_ids = [p.patient_id for p in get_patients_by_doctor(db, doctor_id)]
+        q = q.filter(models.Vitals.patient_id.in_(patient_ids))
+    if nurse_id:
+        patient_ids = [p.patient_id for p in get_patients(db, nurse_id=nurse_id)]
         q = q.filter(models.Vitals.patient_id.in_(patient_ids))
     return q.order_by(models.Vitals.timestamp.desc()).offset(offset).limit(limit).all()
 
@@ -105,14 +173,44 @@ def get_alerts(db: Session, status: str = None, doctor_id: int = None, limit: in
     return q.order_by(models.Alert.created_at.desc()).offset(offset).limit(limit).all()
 
 
-def acknowledge_alert(db: Session, alert_id: int, acknowledged_by: int):
+def acknowledge_alert(
+    db: Session,
+    alert_id: int,
+    current_user: models.User,
+    allow_admin_override: bool = False,
+):
     alert = db.query(models.Alert).filter(models.Alert.alert_id == alert_id).first()
-    if alert:
-        alert.status = "ACKNOWLEDGED"
-        alert.acknowledged_by = acknowledged_by
-        alert.acknowledged_at = datetime.now()
-        db.commit()
-        db.refresh(alert)
+    if not alert:
+        return None
+
+    patient = db.query(models.Patient).filter(models.Patient.patient_id == alert.patient_id).first()
+    if not patient:
+        return None
+
+    if current_user.role == "DOCTOR":
+        if not current_user.doctor_id or patient.assigned_doctor != current_user.doctor_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Not authorized to acknowledge this alert",
+            )
+    elif current_user.role == "ADMIN":
+        if not allow_admin_override:
+            raise HTTPException(
+                status_code=403,
+                detail="Not authorized to acknowledge this alert",
+            )
+    else:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to acknowledge this alert",
+        )
+
+    alert.status = "ACKNOWLEDGED"
+    alert.acknowledged_by = current_user.user_id
+    alert.acknowledged_at = datetime.now()
+    db.commit()
+    db.refresh(alert)
+    write_audit(db, "ACKNOWLEDGE", "alert", entity_id=alert.alert_id, user_id=current_user.user_id)
     return alert
 
 
@@ -328,22 +426,22 @@ def get_patient(db: Session, patient_id: int):
     return _enrich_patient(p) if p else None
 
 
-def create_patient(db: Session, patient: schemas.PatientCreate):
+def create_patient(db: Session, patient: schemas.PatientCreate, user_id: int):
     db_patient = models.Patient(**patient.dict())
     db.add(db_patient)
     db.commit()
     db.refresh(db_patient)
-    write_audit(db, "CREATE", "patient", entity_id=db_patient.patient_id)
+    write_audit(db, "CREATE", "patient", entity_id=db_patient.patient_id, user_id=user_id)
     return _enrich_patient(db_patient)
 
 
-def delete_patient(db: Session, patient_id: int):
+def delete_patient(db: Session, patient_id: int, user_id: int):
     """Hard delete: physically remove patient and all their vitals from the DB."""
     patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
     if patient:
         # Delete all vitals for this patient first (FK constraint)
         db.query(models.Vitals).filter(models.Vitals.patient_id == patient_id).delete()
-        write_audit(db, "DELETE", "patient", entity_id=patient_id)
+        write_audit(db, "DELETE", "patient", entity_id=patient_id, user_id=user_id)
         db.delete(patient)
         db.commit()
     return patient
@@ -407,13 +505,13 @@ def get_doctor(db: Session, doctor_id: int):
     return _enrich_doctor(d) if d else None
 
 
-def create_doctor(db: Session, doctor: schemas.DoctorCreate):
+def create_doctor(db: Session, doctor: schemas.DoctorCreate, user_id: int):
     doctor_data = doctor.dict(exclude={"username", "password"})
     db_doctor = models.Doctor(**doctor_data)
     db.add(db_doctor)
     db.commit()
     db.refresh(db_doctor)
-    write_audit(db, "CREATE", "doctor", entity_id=db_doctor.doctor_id)
+    write_audit(db, "CREATE", "doctor", entity_id=db_doctor.doctor_id, user_id=user_id)
     # Create a linked User account if credentials were provided
     if doctor.username and doctor.password:
         import auth as _auth
@@ -421,7 +519,7 @@ def create_doctor(db: Session, doctor: schemas.DoctorCreate):
     return _enrich_doctor(db_doctor)
 
 
-def delete_doctor(db: Session, doctor_id: int):
+def delete_doctor(db: Session, doctor_id: int, user_id: int):
     """Hard delete: physically remove doctor from the DB.
     Also nullifies doctor_id on any linked user accounts.
     """
@@ -429,7 +527,7 @@ def delete_doctor(db: Session, doctor_id: int):
     if doctor:
         # Nullify FK on linked user accounts before deleting
         db.query(models.User).filter(models.User.doctor_id == doctor_id).update({"doctor_id": None})
-        write_audit(db, "DELETE", "doctor", entity_id=doctor_id)
+        write_audit(db, "DELETE", "doctor", entity_id=doctor_id, user_id=user_id)
         db.delete(doctor)
         db.commit()
     return doctor
@@ -455,13 +553,13 @@ def get_nurse(db: Session, nurse_id: int):
     return _enrich_nurse(n) if n else None
 
 
-def create_nurse(db: Session, nurse: schemas.NurseCreate):
+def create_nurse(db: Session, nurse: schemas.NurseCreate, user_id: int):
     nurse_data = nurse.dict(exclude={"username", "password"})
     db_nurse = models.Nurse(**nurse_data)
     db.add(db_nurse)
     db.commit()
     db.refresh(db_nurse)
-    write_audit(db, "CREATE", "nurse", entity_id=db_nurse.nurse_id)
+    write_audit(db, "CREATE", "nurse", entity_id=db_nurse.nurse_id, user_id=user_id)
     # Create a linked User account if credentials were provided
     if nurse.username and nurse.password:
         import auth as _auth
@@ -469,7 +567,7 @@ def create_nurse(db: Session, nurse: schemas.NurseCreate):
     return _enrich_nurse(db_nurse)
 
 
-def delete_nurse(db: Session, nurse_id: int):
+def delete_nurse(db: Session, nurse_id: int, user_id: int):
     """Hard delete: physically remove nurse from the DB.
     Also nullifies nurse_id on any linked user accounts.
     """
@@ -477,7 +575,7 @@ def delete_nurse(db: Session, nurse_id: int):
     if nurse:
         # Nullify FK on linked user accounts before deleting
         db.query(models.User).filter(models.User.nurse_id == nurse_id).update({"nurse_id": None})
-        write_audit(db, "DELETE", "nurse", entity_id=nurse_id)
+        write_audit(db, "DELETE", "nurse", entity_id=nurse_id, user_id=user_id)
         db.delete(nurse)
         db.commit()
     return nurse
