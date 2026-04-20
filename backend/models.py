@@ -219,3 +219,10 @@ class SLARecord(Base):
     __table_args__ = (
         Index("idx_sla_breached", "breached"),
     )
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    setting_key = Column(String(100), primary_key=True, index=True)
+    setting_value = Column(String(2000), nullable=True)

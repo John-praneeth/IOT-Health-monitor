@@ -1,6 +1,6 @@
 """
 scheduler.py
-Continuously generates fake vitals for every patient in the DB every N seconds.
+Continuously generates vitals for every patient in the DB every N seconds.
 Also runs alert escalation: PENDING alerts older than ESCALATION_MINUTES → ESCALATED.
 Run independently:  python scheduler.py
 """
@@ -12,6 +12,7 @@ from database import SessionLocal
 import models
 import fake_generator
 import crud
+import data_sources
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,14 +56,20 @@ def _publish_vitals(patients_vitals: list):
 
 def run():
     logging.info("Scheduler started.  Interval = %ds  |  Escalation = %d min", INTERVAL_SECONDS, ESCALATION_MINUTES)
+    last_source = None
     while True:
         db = SessionLocal()
         try:
+            current_source = data_sources.get_data_source_config()["source"]
+            if current_source != last_source:
+                logging.info("Vitals source switched to: %s", current_source)
+                last_source = current_source
+
             patients = db.query(models.Patient).all()
             if not patients:
                 logging.warning("No patients found in DB.  Waiting…")
 
-            # ── Generate fake vitals ─────────────────────────────────────
+            # ── Generate vitals from active data source ──────────────────
             vitals_snapshot = []
             for p in patients:
                 vital, alerts = fake_generator.save_fake(db, p.patient_id)

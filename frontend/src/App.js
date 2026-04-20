@@ -12,6 +12,7 @@ import WhatsAppConfig from './pages/WhatsAppConfig';
 import SystemStatus from './pages/SystemStatus';
 import Login from './pages/Login';
 import { getMe } from './api';
+import { API_BASE_LABEL } from './config';
 import './App.css';
 
 export default function App() {
@@ -86,7 +87,7 @@ export default function App() {
               background: 'transparent', color: '#f87171', fontSize: 11, cursor: 'pointer',
             }}>Logout</button>
           </div>
-          <div className="sidebar-footer">API: localhost:8000</div>
+          <div className="sidebar-footer">API: {API_BASE_LABEL}</div>
         </aside>
 
         <main className="main-content">

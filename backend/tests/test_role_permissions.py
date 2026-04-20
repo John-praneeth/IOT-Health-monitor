@@ -54,3 +54,45 @@ def test_public_endpoints_still_work(client):
     assert client.get("/vitals").status_code == 401
     assert client.get("/alerts").status_code == 401
     assert client.get("/health").status_code == 200
+
+
+def test_admin_can_read_and_update_vitals_source(client):
+    headers = _admin_headers(client)
+
+    read_resp = client.get("/vitals/source", headers=headers)
+    assert read_resp.status_code == 200
+    assert read_resp.json()["source"] in ("fake", "thingspeak")
+
+    invalid_switch = client.put(
+        "/vitals/source",
+        headers=headers,
+        json={"source": "thingspeak", "thingspeak_channel_id": ""},
+    )
+    assert invalid_switch.status_code == 400
+
+    switch_resp = client.put(
+        "/vitals/source",
+        headers=headers,
+        json={
+            "source": "thingspeak",
+            "thingspeak_channel_id": "1234567",
+            "thingspeak_temp_unit": "F",
+            "thingspeak_stale_seconds": 120,
+        },
+    )
+    assert switch_resp.status_code == 200
+    assert switch_resp.json()["source"] == "thingspeak"
+    assert switch_resp.json()["thingspeak_channel_id"] == "1234567"
+
+
+def test_non_admin_cannot_manage_vitals_source(client):
+    doctor_headers = _register_and_login(client, "doctor_source_test", "DOCTOR")
+    assert client.get("/vitals/source", headers=doctor_headers).status_code == 403
+    assert (
+        client.put(
+            "/vitals/source",
+            headers=doctor_headers,
+            json={"source": "fake"},
+        ).status_code
+        == 403
+    )

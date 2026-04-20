@@ -8,7 +8,6 @@ Hardware sensor uploads:
     field3 → Temperature (°F)
 """
 
-import os
 import logging
 from datetime import datetime, timezone
 
@@ -19,14 +18,6 @@ logger = logging.getLogger(__name__)
 
 THINGSPEAK_BASE = "https://api.thingspeak.com"
 
-# ── Config from ENV ───────────────────────────────────────────────────────────
-THINGSPEAK_CHANNEL_ID = os.getenv("THINGSPEAK_CHANNEL_ID", "")
-THINGSPEAK_API_KEY    = os.getenv("THINGSPEAK_READ_API_KEY", "")
-THINGSPEAK_TEMP_UNIT  = os.getenv("THINGSPEAK_TEMP_UNIT", "F").upper()
-
-# How old the reading can be before we consider it stale (seconds)
-STALE_THRESHOLD = int(os.getenv("THINGSPEAK_STALE_SECONDS", "120"))
-
 
 class ThingSpeakSource(VitalSource):
     """
@@ -34,10 +25,11 @@ class ThingSpeakSource(VitalSource):
     IoT health-monitoring hardware device (MAX30102 + MLX90614 / DS18B20).
     """
 
-    def __init__(self):
-        self.channel_id = THINGSPEAK_CHANNEL_ID
-        self.api_key    = THINGSPEAK_API_KEY
-        self.temp_unit  = THINGSPEAK_TEMP_UNIT
+    def __init__(self, *, channel_id: str, api_key: str = "", temp_unit: str = "F", stale_threshold: int = 120):
+        self.channel_id = channel_id
+        self.api_key = api_key
+        self.temp_unit = temp_unit.upper()
+        self.stale_threshold = stale_threshold
         logger.info(
             "ThingSpeak source initialised — channel=%s  temp_unit=%s",
             self.channel_id or "(not set)", self.temp_unit,
@@ -134,8 +126,8 @@ class ThingSpeakSource(VitalSource):
         try:
             ts = datetime.fromisoformat(created.replace("Z", "+00:00"))
             age = (datetime.now(timezone.utc) - ts).total_seconds()
-            if age > STALE_THRESHOLD:
-                logger.warning("ThingSpeak data is %.0fs old (threshold %ds) — stale", age, STALE_THRESHOLD)
+            if age > self.stale_threshold:
+                logger.warning("ThingSpeak data is %.0fs old (threshold %ds) — stale", age, self.stale_threshold)
                 return True
         except Exception:
             pass

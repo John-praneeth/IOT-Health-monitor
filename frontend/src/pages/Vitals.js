@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { getVitals, getPatients, getDoctors } from '../api';
+import { buildVitalsWsUrl } from '../config';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -53,11 +54,7 @@ export default function Vitals() {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const base = window.location.port === '3000'
-      ? `${proto}://${window.location.hostname}:8000/ws/vitals`
-      : `${proto}://${window.location.host}/ws/vitals`;
-    const ws = new WebSocket(`${base}?token=${encodeURIComponent(token)}`);
+    const ws = new WebSocket(buildVitalsWsUrl(token));
 
     ws.onmessage = (event) => {
       try {

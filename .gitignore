@@ -37,3 +37,8 @@ Thumbs.db
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 *.dump
+
+# ── Root env files (compose/runtime secrets) ──────────────────────────────────
+.env
+.env.*
+!.env.example

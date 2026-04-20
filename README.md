@@ -226,6 +226,8 @@ npm start
 
 ## Option B: Docker Compose
 
+Create root `.env` from `.env.example`, then run:
+
 ```bash
 docker compose up -d --build
 ```
@@ -237,6 +239,8 @@ Access:
 ## 6. Environment Variables
 
 Create `backend/.env` from `backend/.env.example`.
+
+For Docker Compose, create root `.env` from `.env.example` for required container secrets.
 
 ### Required
 
@@ -275,6 +279,11 @@ THINGSPEAK_TEMP_UNIT=F
 THINGSPEAK_STALE_SECONDS=120
 ```
 
+You can switch between `fake` and `thingspeak` at runtime from **Admin → System Status → Vitals Data Source** without restarting services.  
+API endpoints:
+- `GET /vitals/source` (admin)
+- `PUT /vitals/source` (admin)
+
 ### WhatsApp (GREEN-API)
 
 ```env
@@ -283,6 +292,21 @@ GREEN_API_ID=your_id_instance
 GREEN_API_TOKEN=your_api_token_instance
 WHATSAPP_RECIPIENTS=919876543210,911234567890
 ```
+
+### Frontend API Routing (production-friendly)
+
+Frontend now defaults to same-origin proxy paths:
+
+```env
+REACT_APP_API_BASE_URL=/api
+REACT_APP_WS_BASE_URL=
+```
+
+Set these in root `.env` before `docker compose up --build` if your API/WS endpoints differ.
+
+### Repository Cleanup Note
+
+Keep `backend/tests/` in the repository. Tests are part of production readiness and release safety; they are not deployed in runtime images.
 
 ## 7. Features
 

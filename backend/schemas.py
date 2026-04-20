@@ -326,3 +326,19 @@ class HealthCheckOut(BaseModel):
 class PaginationParams(BaseModel):
     limit: int = 50
     offset: int = 0
+
+
+class VitalsSourceConfigOut(BaseModel):
+    source: str
+    thingspeak_channel_id: Optional[str] = None
+    thingspeak_read_api_key_set: bool = False
+    thingspeak_temp_unit: str = "F"
+    thingspeak_stale_seconds: int = 120
+
+
+class VitalsSourceConfigUpdate(BaseModel):
+    source: str = Field(..., pattern=r"^(fake|thingspeak)$")
+    thingspeak_channel_id: Optional[str] = None
+    thingspeak_read_api_key: Optional[str] = None
+    thingspeak_temp_unit: Optional[str] = Field(None, pattern=r"^(F|C)$")
+    thingspeak_stale_seconds: Optional[int] = Field(None, ge=10, le=3600)

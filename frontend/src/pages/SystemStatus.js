@@ -1,28 +1,59 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getDashboardStats, getHealthFull } from '../api';
+import {
+  getDashboardStats,
+  getHealthFull,
+  getVitalsSourceConfig,
+  updateVitalsSourceConfig,
+} from '../api';
+import { getDocsUrl, getRedocUrl } from '../config';
 
 export default function SystemStatus() {
   const [stats, setStats]       = useState(null);
   const [health, setHealth]     = useState(null);
   const [loading, setLoading]   = useState(true);
   const [lastCheck, setLastCheck] = useState(null);
+  const [sourceConfig, setSourceConfig] = useState(null);
+  const [sourceForm, setSourceForm] = useState({
+    source: 'fake',
+    thingspeak_channel_id: '',
+    thingspeak_read_api_key: '',
+    thingspeak_temp_unit: 'F',
+    thingspeak_stale_seconds: 120,
+  });
+  const [savingSource, setSavingSource] = useState(false);
+  const [sourceMessage, setSourceMessage] = useState('');
+  const role = (localStorage.getItem('role') || '').toUpperCase();
+  const isAdmin = role === 'ADMIN';
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [statsRes, healthRes] = await Promise.all([
+      const requests = [
         getDashboardStats(),
         getHealthFull(),
-      ]);
+      ];
+      if (isAdmin) requests.push(getVitalsSourceConfig());
+      const responses = await Promise.all(requests);
+      const [statsRes, healthRes, sourceRes] = responses;
       setStats(statsRes.data);
       setHealth(healthRes.data);
+      if (isAdmin && sourceRes?.data) {
+        setSourceConfig(sourceRes.data);
+        setSourceForm({
+          source: sourceRes.data.source,
+          thingspeak_channel_id: sourceRes.data.thingspeak_channel_id || '',
+          thingspeak_read_api_key: '',
+          thingspeak_temp_unit: sourceRes.data.thingspeak_temp_unit || 'F',
+          thingspeak_stale_seconds: sourceRes.data.thingspeak_stale_seconds || 120,
+        });
+      }
     } catch (err) {
       setHealth({ status: 'error', db: { status: 'error', detail: 'Backend unreachable' }, redis: { status: 'error', detail: 'Backend unreachable' }, whatsapp: { status: 'unknown', detail: 'Backend unreachable' } });
     } finally {
       setLoading(false);
       setLastCheck(new Date().toLocaleTimeString());
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -78,6 +109,32 @@ export default function SystemStatus() {
         </div>
       </div>
     );
+  };
+
+  const saveSourceConfig = async () => {
+    setSavingSource(true);
+    setSourceMessage('');
+    try {
+      const payload = {
+        source: sourceForm.source,
+        thingspeak_temp_unit: sourceForm.thingspeak_temp_unit,
+        thingspeak_stale_seconds: Number(sourceForm.thingspeak_stale_seconds),
+      };
+      if (sourceForm.thingspeak_channel_id.trim()) {
+        payload.thingspeak_channel_id = sourceForm.thingspeak_channel_id.trim();
+      }
+      if (sourceForm.thingspeak_read_api_key.trim()) {
+        payload.thingspeak_read_api_key = sourceForm.thingspeak_read_api_key.trim();
+      }
+      const res = await updateVitalsSourceConfig(payload);
+      setSourceConfig(res.data);
+      setSourceForm((prev) => ({ ...prev, thingspeak_read_api_key: '' }));
+      setSourceMessage('Vitals source updated.');
+    } catch (err) {
+      setSourceMessage(err?.response?.data?.detail || 'Failed to update vitals source.');
+    } finally {
+      setSavingSource(false);
+    }
   };
 
   return (
@@ -183,6 +240,76 @@ export default function SystemStatus() {
         ))}
       </div>
 
+      {isAdmin && (
+        <div style={{ ...card, marginBottom: 28 }}>
+          <h3 style={{ color: '#e2e8f0', fontSize: 15, marginBottom: 14 }}>🧪 Vitals Data Source</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(240px, 1fr))', gap: 12 }}>
+            <div>
+              <label style={{ color: '#94a3b8', fontSize: 12 }}>Source</label>
+              <select
+                value={sourceForm.source}
+                onChange={(e) => setSourceForm((prev) => ({ ...prev, source: e.target.value }))}
+                style={{ width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
+              >
+                <option value="fake">Fake vitals (demo)</option>
+                <option value="thingspeak">ThingSpeak (real hardware)</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ color: '#94a3b8', fontSize: 12 }}>ThingSpeak Channel ID</label>
+              <input
+                value={sourceForm.thingspeak_channel_id}
+                onChange={(e) => setSourceForm((prev) => ({ ...prev, thingspeak_channel_id: e.target.value }))}
+                style={{ width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
+              />
+            </div>
+            <div>
+              <label style={{ color: '#94a3b8', fontSize: 12 }}>ThingSpeak Read API Key (optional)</label>
+              <input
+                value={sourceForm.thingspeak_read_api_key}
+                onChange={(e) => setSourceForm((prev) => ({ ...prev, thingspeak_read_api_key: e.target.value }))}
+                placeholder={sourceConfig?.thingspeak_read_api_key_set ? 'Configured (leave blank to keep)' : ''}
+                style={{ width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
+              />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={{ color: '#94a3b8', fontSize: 12 }}>Temperature Unit</label>
+                <select
+                  value={sourceForm.thingspeak_temp_unit}
+                  onChange={(e) => setSourceForm((prev) => ({ ...prev, thingspeak_temp_unit: e.target.value }))}
+                  style={{ width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
+                >
+                  <option value="F">Fahrenheit</option>
+                  <option value="C">Celsius</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ color: '#94a3b8', fontSize: 12 }}>Stale Threshold (sec)</label>
+                <input
+                  type="number"
+                  min={10}
+                  max={3600}
+                  value={sourceForm.thingspeak_stale_seconds}
+                  onChange={(e) => setSourceForm((prev) => ({ ...prev, thingspeak_stale_seconds: e.target.value }))}
+                  style={{ width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
+                />
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={saveSourceConfig}
+              disabled={savingSource}
+              style={{ padding: '8px 16px', borderRadius: 7, border: '1px solid #475569', background: '#1d4ed8', color: '#fff', fontWeight: 600, cursor: savingSource ? 'not-allowed' : 'pointer', opacity: savingSource ? 0.6 : 1 }}
+            >
+              {savingSource ? 'Saving…' : 'Save Source Settings'}
+            </button>
+            {sourceMessage && <span style={{ color: sourceMessage.includes('Failed') ? '#f87171' : '#4ade80', fontSize: 12 }}>{sourceMessage}</span>}
+          </div>
+        </div>
+      )}
+
       {/* Redis note */}
       {health?.redis?.status === 'disabled' && (
         <div style={{ ...card, marginBottom: 20, padding: '12px 16px', borderColor: '#475569' }}>
@@ -197,13 +324,13 @@ export default function SystemStatus() {
       <div style={{ ...card, padding: '16px 20px' }}>
         <h3 style={{ color: '#e2e8f0', fontSize: 14, marginBottom: 12 }}>🔗 Quick Links</h3>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <a href="http://localhost:8000/docs" target="_blank" rel="noopener noreferrer" style={{
+          <a href={getDocsUrl()} target="_blank" rel="noopener noreferrer" style={{
             padding: '8px 18px', background: '#1d4ed8', borderRadius: 7,
             color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600,
           }}>
             📄 API Docs (Swagger)
           </a>
-          <a href="http://localhost:8000/redoc" target="_blank" rel="noopener noreferrer" style={{
+          <a href={getRedocUrl()} target="_blank" rel="noopener noreferrer" style={{
             padding: '8px 18px', background: '#0f766e', borderRadius: 7,
             color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600,
           }}>

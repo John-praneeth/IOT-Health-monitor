@@ -1,6 +1,7 @@
 import axios from 'axios';
+import { API_BASE_URL } from './config';
 
-const API = axios.create({ baseURL: 'http://localhost:8000' });
+const API = axios.create({ baseURL: API_BASE_URL });
 
 // ── Token interceptor: attach JWT to every request if available ──
 API.interceptors.request.use((config) => {
@@ -47,6 +48,8 @@ export const assignNurse   = (id, nurseId)   => API.patch(`/patients/${id}/assig
 // ── Vitals ────────────────────────────────────────────────
 export const getVitals      = (params={})    => API.get('/vitals', { params });
 export const getLatestVital = (patientId)    => API.get(`/vitals/latest/${patientId}`);
+export const getVitalsSourceConfig = ()      => API.get('/vitals/source');
+export const updateVitalsSourceConfig = (data) => API.put('/vitals/source', data);
 
 // ── Alerts ────────────────────────────────────────────────
 export const getAlerts         = (params={}) => API.get('/alerts', { params });

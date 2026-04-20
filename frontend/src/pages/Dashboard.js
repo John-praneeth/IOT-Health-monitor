@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { getPatients, getAlerts, getDoctors, getDashboardStats, getMyNotifications, markAllNotificationsRead, markNotificationRead, getVitals } from '../api';
+import { buildVitalsWsUrl } from '../config';
 
 // Treat DB timestamps as UTC → convert to local time correctly
 const toLocal = (ts) => ts ? new Date(ts.endsWith('Z') ? ts : ts + 'Z') : null;
@@ -61,11 +62,7 @@ export default function Dashboard() {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const base = window.location.port === '3000'
-      ? `${proto}://${window.location.hostname}:8000/ws/vitals`
-      : `${proto}://${window.location.host}/ws/vitals`;
-    const ws = new WebSocket(`${base}?token=${encodeURIComponent(token)}`);
+    const ws = new WebSocket(buildVitalsWsUrl(token));
 
     ws.onmessage = (event) => {
       try {

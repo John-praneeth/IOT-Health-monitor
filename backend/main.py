@@ -20,6 +20,7 @@ from jose import JWTError, ExpiredSignatureError, jwt
 
 import auth
 import crud
+import data_sources
 import models
 import schemas
 import whatsapp_notifier
@@ -1689,6 +1690,47 @@ def health_full(
         "db": db_health,
         "redis": redis_health,
         "whatsapp": wa_health,
+    }
+
+
+@app.get("/vitals/source", response_model=schemas.VitalsSourceConfigOut, tags=["Vitals"])
+def get_vitals_source_config(
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+):
+    _ = current_user
+    config = data_sources.get_data_source_config()
+    return {
+        "source": config["source"],
+        "thingspeak_channel_id": config["thingspeak_channel_id"] or None,
+        "thingspeak_read_api_key_set": bool(config["thingspeak_read_api_key"]),
+        "thingspeak_temp_unit": config["thingspeak_temp_unit"],
+        "thingspeak_stale_seconds": config["thingspeak_stale_seconds"],
+    }
+
+
+@app.put("/vitals/source", response_model=schemas.VitalsSourceConfigOut, tags=["Vitals"])
+def update_vitals_source_config(
+    payload: schemas.VitalsSourceConfigUpdate,
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+):
+    _ = current_user
+    try:
+        config = data_sources.update_data_source_config(
+            source=payload.source,
+            thingspeak_channel_id=payload.thingspeak_channel_id,
+            thingspeak_read_api_key=payload.thingspeak_read_api_key,
+            thingspeak_temp_unit=payload.thingspeak_temp_unit,
+            thingspeak_stale_seconds=payload.thingspeak_stale_seconds,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "source": config["source"],
+        "thingspeak_channel_id": config["thingspeak_channel_id"] or None,
+        "thingspeak_read_api_key_set": bool(config["thingspeak_read_api_key"]),
+        "thingspeak_temp_unit": config["thingspeak_temp_unit"],
+        "thingspeak_stale_seconds": config["thingspeak_stale_seconds"],
     }
 
 
