@@ -9,6 +9,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+# Ensure security-critical env vars exist before importing app/auth modules.
+os.environ.setdefault("SECRET_KEY", "unit-local-secret-very-strong-123456789")
+
 # Ensure backend is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 

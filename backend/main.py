@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -65,12 +66,34 @@ APP_STARTED_AT = time.time()
 HTTP_REQUESTS_TOTAL = 0
 HTTP_REQUEST_ERRORS_TOTAL = 0
 HTTP_REQUEST_DURATION_SECONDS_SUM = 0.0
+_redis_subscriber_started = False
+_redis_subscriber_task: Optional[asyncio.Task] = None
+
+
+@asynccontextmanager
+async def app_lifespan(_app: FastAPI):
+    """Manage background subscriber lifecycle without deprecated startup hooks."""
+    global _redis_subscriber_started, _redis_subscriber_task
+    if not _redis_subscriber_started and is_redis_available():
+        _redis_subscriber_task = asyncio.create_task(_redis_vitals_subscriber())
+        _redis_subscriber_started = True
+        logger.info("Redis pub/sub WebSocket subscriber started (v5.2 event-driven)")
+    try:
+        yield
+    finally:
+        if _redis_subscriber_task and not _redis_subscriber_task.done():
+            _redis_subscriber_task.cancel()
+            try:
+                await _redis_subscriber_task
+            except asyncio.CancelledError:
+                pass
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(
     title="IoT Healthcare Patient Monitor",
     description="Real-time patient vital-sign monitoring with WhatsApp alerts, "
                 "Redis pub/sub WebSocket, and role-based access control.",
+    lifespan=app_lifespan,
 )
 
 # ── Rate Limiting ─────────────────────────────────────────────────────────────
@@ -382,6 +405,21 @@ def me(current_user: models.User = Depends(auth.require_auth)):
     return current_user
 
 
+@app.post("/auth/reset-password", tags=["Auth"])
+def reset_password(
+    body: schemas.ResetPasswordRequest,
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
+):
+    user = auth.get_user_by_username(db, body.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.password_hash = auth.hash_password(body.new_password)
+    db.commit()
+    crud.write_audit(db, "RESET_PASSWORD", "user", entity_id=user.user_id, user_id=current_user.user_id)
+    return {"detail": f"Password reset successful for '{user.username}'"}
+
+
 @app.post("/auth/refresh", response_model=schemas.TokenResponse, tags=["Auth"])
 def refresh_auth_token(response: Response, request: Request, db: Session = Depends(get_db)):
     refresh_token = request.cookies.get(auth.REFRESH_COOKIE_NAME)
@@ -491,7 +529,11 @@ def logout(
 #  HOSPITAL ENDPOINTS  (ADMIN only for create)
 # ═══════════════════════════════════════════════════════════════════════════════
 @app.get("/hospitals", response_model=List[schemas.HospitalOut], tags=["Hospitals"])
-def list_hospitals(db: Session = Depends(get_db)):
+def list_hospitals(
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
     return crud.get_hospitals(db)
 
 
@@ -811,7 +853,36 @@ def get_alerts(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    return crud.get_alerts(db, status=status, doctor_id=doctor_id, limit=limit, offset=offset)
+    if current_user.role == "ADMIN":
+        return crud.get_alerts(db, status=status, doctor_id=doctor_id, limit=limit, offset=offset)
+
+    if current_user.role == "DOCTOR":
+        if not current_user.doctor_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these alerts")
+        if doctor_id and doctor_id != current_user.doctor_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these alerts")
+        return crud.get_alerts(
+            db,
+            status=status,
+            doctor_id=current_user.doctor_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    if current_user.role == "NURSE":
+        if not current_user.nurse_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these alerts")
+        if doctor_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access these alerts")
+        return crud.get_alerts(
+            db,
+            status=status,
+            nurse_id=current_user.nurse_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    raise HTTPException(status_code=403, detail="Not authorized to access these alerts")
 
 
 @app.patch("/alerts/{alert_id}/acknowledge", response_model=schemas.AlertOut, tags=["Alerts"])
@@ -888,7 +959,7 @@ def dashboard_stats(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    return crud.get_dashboard_stats(db)
+    return crud.get_dashboard_stats(db, current_user=current_user)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -930,6 +1001,49 @@ def check_alert_ownership(db: Session, alert_id: int, current_user: models.User)
         status_code=403,
         detail="Not authorized to acknowledge this alert",
     )
+
+
+def _allowed_patient_ids_for_user(db: Session, user: models.User) -> Optional[set[int]]:
+    """
+    Return patient IDs visible to the user for real-time streams.
+    None means full access.
+    """
+    if user.role == "ADMIN":
+        return None
+
+    if user.role == "DOCTOR":
+        if not user.doctor_id:
+            return set()
+        ids = {
+            row[0] for row in db.query(models.Patient.patient_id).filter(
+                models.Patient.assigned_doctor == user.doctor_id
+            ).all()
+        }
+        doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == user.doctor_id).first()
+        if doctor and doctor.hospital_id:
+            ids.update(
+                row[0] for row in db.query(models.Patient.patient_id).filter(
+                    models.Patient.hospital_id == doctor.hospital_id
+                ).all()
+            )
+        return ids
+
+    if user.role == "NURSE":
+        if not user.nurse_id:
+            return set()
+        return {
+            row[0] for row in db.query(models.Patient.patient_id).filter(
+                models.Patient.assigned_nurse == user.nurse_id
+            ).all()
+        }
+
+    return set()
+
+
+def _filter_ws_payload_for_user(payload: list[dict], allowed_ids: Optional[set[int]]) -> list[dict]:
+    if allowed_ids is None:
+        return payload
+    return [row for row in payload if row.get("patient_id") in allowed_ids]
 
 
 @app.get("/patients/{patient_id}/chat", response_model=List[schemas.ChatMessageOut], tags=["Chat"])
@@ -993,8 +1107,15 @@ class ConnectionManager:
         self._msg_counts: dict[str, int] = {}
         self._msg_reset_time: dict[str, float] = {}
         self._conn_msg_times: dict[int, list[float]] = {}
+        self._conn_user: dict[int, dict] = {}
 
-    async def connect(self, ws: WebSocket, client_ip: str = "unknown", user_key: str = "unknown"):
+    async def connect(
+        self,
+        ws: WebSocket,
+        user: models.User,
+        client_ip: str = "unknown",
+        user_key: str = "unknown",
+    ):
         current = self._ip_counts.get(client_ip, 0)
         if current >= WS_CONNECTION_LIMIT:
             await ws.close(code=1008, reason="Too many WebSocket connections from this IP")
@@ -1008,6 +1129,13 @@ class ConnectionManager:
         self._ip_counts[client_ip] = current + 1
         self._user_counts[user_key] = user_current + 1
         self._conn_msg_times[id(ws)] = []
+        self._conn_user[id(ws)] = {
+            "user_id": user.user_id,
+            "role": user.role,
+            "doctor_id": user.doctor_id,
+            "nurse_id": user.nurse_id,
+            "username": user.username,
+        }
         return True
 
     def disconnect(self, ws: WebSocket, client_ip: str = "unknown", user_key: str = "unknown"):
@@ -1018,6 +1146,7 @@ class ConnectionManager:
         user_current = self._user_counts.get(user_key, 1)
         self._user_counts[user_key] = max(0, user_current - 1)
         self._conn_msg_times.pop(id(ws), None)
+        self._conn_user.pop(id(ws), None)
 
     def check_connection_message_rate(self, ws: WebSocket) -> bool:
         now = time.time()
@@ -1045,6 +1174,39 @@ class ConnectionManager:
         self._msg_counts[client_ip] = count + 1
         return True
 
+    async def broadcast_vitals(self, message: str):
+        try:
+            payload = json.loads(message)
+        except json.JSONDecodeError:
+            payload = []
+        if not isinstance(payload, list):
+            payload = []
+
+        db = SessionLocal()
+        try:
+            allowed_cache: dict[int, Optional[set[int]]] = {}
+            for conn in list(self.active_connections):
+                try:
+                    user_meta = self._conn_user.get(id(conn))
+                    if not user_meta:
+                        await conn.send_text("[]")
+                        continue
+                    user_id = int(user_meta["user_id"])
+                    allowed_ids = allowed_cache.get(user_id)
+                    if user_id not in allowed_cache:
+                        db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
+                        allowed_ids = _allowed_patient_ids_for_user(db, db_user) if db_user else set()
+                        allowed_cache[user_id] = allowed_ids
+                    filtered_payload = _filter_ws_payload_for_user(payload, allowed_ids)
+                    await conn.send_text(json.dumps(filtered_payload))
+                except Exception:
+                    if conn in self.active_connections:
+                        self.active_connections.remove(conn)
+                    self._conn_msg_times.pop(id(conn), None)
+                    self._conn_user.pop(id(conn), None)
+        finally:
+            db.close()
+
     async def broadcast(self, message: str):
         for conn in list(self.active_connections):
             try:
@@ -1062,9 +1224,6 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# ── Redis pub/sub subscriber (background task) ────────────────────────────────
-_redis_subscriber_started = False
-
 
 async def _redis_vitals_subscriber():
     """Subscribe to Redis pub/sub channel and broadcast to all WebSocket clients.
@@ -1075,6 +1234,8 @@ async def _redis_vitals_subscriber():
     from database import REDIS_URL
     logger.info("Starting Redis pub/sub subscriber on channel: %s", WS_REDIS_CHANNEL)
     while True:
+        r = None
+        pubsub = None
         try:
             r = aioredis.from_url(REDIS_URL, socket_connect_timeout=5)
             pubsub = r.pubsub()
@@ -1084,20 +1245,23 @@ async def _redis_vitals_subscriber():
                     data = raw_message["data"]
                     if isinstance(data, bytes):
                         data = data.decode("utf-8")
-                    await manager.broadcast(data)
+                    await manager.broadcast_vitals(data)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.warning("Redis subscriber error (reconnecting in 3s): %s", e)
             await asyncio.sleep(3)
-
-
-@app.on_event("startup")
-async def startup_redis_subscriber():
-    """Start the Redis pub/sub subscriber as a background task."""
-    global _redis_subscriber_started
-    if not _redis_subscriber_started and is_redis_available():
-        asyncio.create_task(_redis_vitals_subscriber())
-        _redis_subscriber_started = True
-        logger.info("Redis pub/sub WebSocket subscriber started (v5.2 event-driven)")
+        finally:
+            if pubsub is not None:
+                try:
+                    await pubsub.aclose()
+                except Exception:
+                    pass
+            if r is not None:
+                try:
+                    await r.aclose()
+                except Exception:
+                    pass
 
 
 def _get_ws_user(token: str, db: Session) -> tuple[Optional[models.User], Optional[str]]:
@@ -1156,7 +1320,7 @@ async def ws_vitals(websocket: WebSocket):
 
     client_ip = websocket.client.host if websocket.client else "unknown"
     user_key = str(user.user_id)
-    accepted = await manager.connect(websocket, client_ip, user_key)
+    accepted = await manager.connect(websocket, user=user, client_ip=client_ip, user_key=user_key)
     if not accepted:
         return
 
@@ -1188,7 +1352,10 @@ async def ws_vitals(websocket: WebSocket):
             db = SessionLocal()
             try:
                 while True:
+                    allowed_ids = _allowed_patient_ids_for_user(db, user)
                     patients = crud.get_patients(db)
+                    if allowed_ids is not None:
+                        patients = [p for p in patients if p.patient_id in allowed_ids]
                     payload = []
                     for p in patients:
                         v = crud.get_latest_vital(db, p.patient_id)
@@ -1437,7 +1604,7 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
         return {"status": "received", "action": "none"}
     except Exception as e:
         logger.error("WhatsApp webhook error: %s", e, exc_info=True)
-        return {"status": "error", "detail": str(e)}
+        return {"status": "error", "detail": "Unable to process webhook payload"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

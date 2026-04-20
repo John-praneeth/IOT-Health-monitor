@@ -8,8 +8,8 @@ THRESHOLDS = {
     "HIGH_HEART_RATE": lambda v: v.heart_rate > 110,
     "LOW_HEART_RATE":  lambda v: v.heart_rate < 50,
     "LOW_SPO2":        lambda v: v.spo2 < 90,
-    "HIGH_TEMP":       lambda v: v.temperature > 39.0,
-    "LOW_TEMP":        lambda v: v.temperature < 35.0,
+    "HIGH_TEMP":       lambda v: v.temperature > 101.0,
+    "LOW_TEMP":        lambda v: v.temperature < 96.0,
 }
 
 

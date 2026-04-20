@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 
@@ -8,7 +8,7 @@ class VitalsBase(BaseModel):
     patient_id: int
     heart_rate: int = Field(..., ge=30, le=220)
     spo2: int = Field(..., ge=70, le=100)
-    temperature: float = Field(..., ge=30, le=45)
+    temperature: float = Field(..., ge=85, le=110)
 
 
 class VitalsCreate(VitalsBase):
@@ -18,9 +18,7 @@ class VitalsCreate(VitalsBase):
 class VitalsOut(VitalsBase):
     vital_id: Optional[int] = None
     timestamp: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Alerts ───────────────────────────────────────────────────────────────────
@@ -34,8 +32,7 @@ class AlertOut(BaseModel):
     last_checked_at: Optional[datetime] = None
     acknowledged_by: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Patients ─────────────────────────────────────────────────────────────────
@@ -58,8 +55,7 @@ class PatientOut(PatientBase):
     nurse_name: Optional[str] = None
     hospital_name: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Hospitals ─────────────────────────────────────────────────────────────────
@@ -76,9 +72,7 @@ class HospitalCreate(HospitalBase):
 
 class HospitalOut(HospitalBase):
     hospital_id: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Doctors ───────────────────────────────────────────────────────────────────
@@ -100,9 +94,7 @@ class DoctorCreate(DoctorBase):
 class DoctorOut(DoctorBase):
     doctor_id: int
     hospital_name: Optional[str] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Doctor Self-Registration ──────────────────────────────────────────────────
@@ -135,9 +127,7 @@ class NurseCreate(NurseBase):
 class NurseOut(NurseBase):
     nurse_id: int
     hospital_name: Optional[str] = None
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Nurse Self-Registration ──────────────────────────────────────────────────
@@ -184,6 +174,11 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=200)
 
 
+class ResetPasswordRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+    new_password: str = Field(..., min_length=6, max_length=200)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -200,8 +195,7 @@ class UserOut(BaseModel):
     doctor_id: Optional[int] = None
     nurse_id: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Alert Escalation ─────────────────────────────────────────────────────────
@@ -211,8 +205,7 @@ class EscalationOut(BaseModel):
     escalated_to_doctor: int
     escalated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Alert Notification ────────────────────────────────────────────────────────
@@ -224,8 +217,7 @@ class AlertNotificationOut(BaseModel):
     is_read: bool
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
@@ -237,8 +229,7 @@ class AuditLogOut(BaseModel):
     entity_id: Optional[int] = None
     timestamp: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Chat Messages ─────────────────────────────────────────────────────────────
@@ -254,8 +245,7 @@ class ChatMessageOut(BaseModel):
     message: str
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Dashboard Stats ───────────────────────────────────────────────────────────
@@ -267,6 +257,7 @@ class DashboardStats(BaseModel):
     pending_alerts: int
     escalated_alerts: int
     acknowledged_alerts: int
+    duplicate_vitals_count: int = 0
 
 
 # ── WhatsApp Configuration ───────────────────────────────────────────────────
@@ -315,8 +306,7 @@ class WhatsAppLogOut(BaseModel):
     created_at: Optional[datetime] = None
     sent_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────

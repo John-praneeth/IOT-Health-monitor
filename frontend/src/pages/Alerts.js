@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getAlerts, acknowledgeAlert, getPatients, getDoctors, getWhatsAppConfig } from '../api';
+import { getAlerts, acknowledgeAlert, getPatients, getDoctors, getWhatsAppConfig, getDashboardStats } from '../api';
 
 // Treat DB timestamps as UTC → convert to local time correctly
 const toLocal = (ts) => ts ? new Date(ts.endsWith('Z') ? ts : ts + 'Z') : null;
@@ -13,6 +13,7 @@ export default function Alerts() {
   const [loading,     setLoading]     = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [whatsappStatus, setWhatsappStatus] = useState(null);
+  const [alertStats, setAlertStats] = useState(null);
 
   const role = localStorage.getItem('role');
   const userId = parseInt(localStorage.getItem('user_id') || '0', 10);
@@ -23,14 +24,16 @@ export default function Alerts() {
       const params = {};
       if (filter) params.status = filter;
       if (doctorFilter) params.doctor_id = parseInt(doctorFilter);
-      const [aRes, pRes, dRes] = await Promise.all([
+      const [aRes, pRes, dRes, sRes] = await Promise.all([
         getAlerts(params),
         getPatients(),
         getDoctors(),
+        getDashboardStats(),
       ]);
       setAlerts(aRes.data);
       setPatients(pRes.data);
       setDoctors(dRes.data);
+      setAlertStats(sRes.data);
       setLastRefresh(new Date().toLocaleTimeString());
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
@@ -68,8 +71,9 @@ export default function Alerts() {
     return <span className="badge">{status}</span>;
   };
 
-  const pending   = alerts.filter(a => a.status === 'PENDING').length;
-  const escalated = alerts.filter(a => a.status === 'ESCALATED').length;
+  const pending = alertStats?.pending_alerts ?? alerts.filter(a => a.status === 'PENDING').length;
+  const escalated = alertStats?.escalated_alerts ?? alerts.filter(a => a.status === 'ESCALATED').length;
+  const acknowledged = alertStats?.acknowledged_alerts ?? alerts.filter(a => a.status === 'ACKNOWLEDGED').length;
 
   return (
     <div>
@@ -119,7 +123,7 @@ export default function Alerts() {
         </div>
         <div className="stat-card green">
           <div className="label">Acknowledged</div>
-          <div className="value">{alerts.filter(a => a.status === 'ACKNOWLEDGED').length}</div>
+          <div className="value">{acknowledged}</div>
         </div>
         <div className="stat-card blue">
           <div className="label">Total</div>

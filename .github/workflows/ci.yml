@@ -52,7 +52,7 @@ jobs:
         working-directory: ./backend
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/test_patient_monitor
-          SECRET_KEY: test-secret-key
+          SECRET_KEY: ci-very-strong-secret-key-123456789
           DATA_SOURCE: fake
         run: python -m pytest tests/ -v --tb=short
 

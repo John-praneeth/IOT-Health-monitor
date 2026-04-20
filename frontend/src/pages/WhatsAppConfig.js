@@ -3,6 +3,8 @@ import {
   getWhatsAppConfig,
   pauseWhatsAppAlerts,
   resumeWhatsAppAlerts,
+  addWhatsAppRecipient,
+  removeWhatsAppRecipient,
   getDoctors,
   getNurses,
 } from '../api';
@@ -14,6 +16,7 @@ export default function WhatsAppConfig() {
   const [loading, setLoading]         = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError]             = useState('');
+  const [recipientInput, setRecipientInput] = useState('');
 
   const role = localStorage.getItem('role');
 
@@ -69,6 +72,36 @@ export default function WhatsAppConfig() {
       setError('');
     } catch (err) {
       setError('Failed to toggle alerts: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAddRecipient = async (e) => {
+    e.preventDefault();
+    const phone = recipientInput.replace(/\D/g, '');
+    if (!phone) return;
+    setActionLoading(true);
+    try {
+      const res = await addWhatsAppRecipient(phone);
+      setConfig(res.data);
+      setRecipientInput('');
+      setError('');
+    } catch (err) {
+      setError('Failed to add recipient: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRemoveRecipient = async (phone) => {
+    setActionLoading(true);
+    try {
+      const res = await removeWhatsAppRecipient(phone);
+      setConfig(res.data);
+      setError('');
+    } catch (err) {
+      setError('Failed to remove recipient: ' + (err.response?.data?.detail || err.message));
     } finally {
       setActionLoading(false);
     }
@@ -240,6 +273,59 @@ export default function WhatsAppConfig() {
             <div style={{ fontSize: 12, marginTop: 6 }}>
               Register doctors or nurses with phone numbers and they will appear here automatically.
             </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{
+        background: 'rgba(255,255,255,0.05)',
+        borderRadius: 12,
+        padding: 20,
+        marginBottom: 24,
+        border: '1px solid rgba(255,255,255,0.1)',
+      }}>
+        <h3 style={{ color: '#e2e8f0', marginBottom: 8, fontSize: 15 }}>🛠️ Manual Recipients</h3>
+        <p style={{ color: '#64748b', fontSize: 12, marginBottom: 14 }}>
+          Add/remove test recipients used by WhatsApp config and manual testing.
+        </p>
+        <form onSubmit={handleAddRecipient} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <input
+            value={recipientInput}
+            onChange={(e) => setRecipientInput(e.target.value)}
+            placeholder="e.g. 919876543210"
+            style={{
+              flex: 1,
+              background: '#0f172a',
+              border: '1px solid #334155',
+              borderRadius: 8,
+              color: '#e2e8f0',
+              padding: '10px 12px',
+            }}
+          />
+          <button type="submit" className="btn btn-primary btn-sm" disabled={actionLoading}>
+            + Add
+          </button>
+        </form>
+        {(config?.recipients || []).length === 0 ? (
+          <div style={{ color: '#64748b', fontSize: 12 }}>No manual recipients configured.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {config.recipients.map((phone) => (
+              <div key={phone} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 8, padding: '8px 12px',
+              }}>
+                <span style={{ color: '#67e8f9', fontFamily: 'monospace', fontSize: 13 }}>+{phone}</span>
+                <button
+                  className="btn btn-danger btn-sm"
+                  disabled={actionLoading}
+                  onClick={() => handleRemoveRecipient(phone)}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </div>

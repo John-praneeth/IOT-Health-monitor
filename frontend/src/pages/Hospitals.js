@@ -22,6 +22,13 @@ const COUNTRY_CODES = [
 
 const EMPTY = { name: '', location: '', phone: '', email: '' };
 
+const formatPhone = (raw) => {
+  if (!raw) return '—';
+  const digits = String(raw).replace(/\D/g, '');
+  if (!digits) return '—';
+  return `+${digits}`;
+};
+
 export default function Hospitals() {
   const [hospitals,   setHospitals]   = useState([]);
   const [form,        setForm]        = useState(EMPTY);
@@ -100,7 +107,7 @@ export default function Hospitals() {
                 </div>
                 {form.phone.trim() && (
                   <small style={{ color:'#64748b', fontFamily:'monospace' }}>
-                    → {countryCode}{form.phone.replace(/^0+/, '')}
+                    → +{countryCode}{form.phone.replace(/^0+/, '')}
                   </small>
                 )}
               </div>
@@ -134,7 +141,7 @@ export default function Hospitals() {
                   <td>#{h.hospital_id}</td>
                   <td><strong>{h.name}</strong></td>
                   <td>{h.location}</td>
-                  <td>{h.phone || '—'}</td>
+                  <td>{formatPhone(h.phone)}</td>
                   <td>{h.email || '—'}</td>
                 </tr>
               ))}

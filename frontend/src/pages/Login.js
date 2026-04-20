@@ -157,6 +157,9 @@ export default function Login({ onLogin }) {
             <button type="submit" disabled={loading} style={btnStyle}>
               {loading ? 'Signing in…' : '🔑 Sign In'}
             </button>
+            <p style={{ color: '#64748b', fontSize: 12, marginTop: 10, marginBottom: 0 }}>
+              Forgot credentials? Contact your admin to reset your password from the Admin API.
+            </p>
           </form>
         )}
 

@@ -35,6 +35,7 @@ export const registerDoctor   = (data) => API.post('/auth/register/doctor', data
 export const registerNurse    = (data) => API.post('/auth/register/nurse', data);
 export const login            = (data) => API.post('/auth/login', data);
 export const getMe            = ()     => API.get('/auth/me');
+export const resetPassword    = (data) => API.post('/auth/reset-password', data);
 
 // ── Patients ──────────────────────────────────────────────
 export const getPatients   = (params={})     => API.get('/patients', { params });
@@ -86,6 +87,8 @@ export const getAuditLogs  = (params={})     => API.get('/audit-logs', { params 
 export const getWhatsAppConfig   = ()       => API.get('/whatsapp/config');
 export const pauseWhatsAppAlerts = ()       => API.post('/whatsapp/alerts/pause');
 export const resumeWhatsAppAlerts= ()       => API.post('/whatsapp/alerts/resume');
+export const addWhatsAppRecipient = (phone) => API.post('/whatsapp/recipients/add', { phone });
+export const removeWhatsAppRecipient = (phone) => API.post('/whatsapp/recipients/remove', { phone });
 export const getWhatsAppLogs     = (p={})   => API.get('/whatsapp/logs', { params: p });
 
 // ── Health Checks ─────────────────────────────────────────────────────────────

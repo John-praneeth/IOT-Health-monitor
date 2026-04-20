@@ -73,8 +73,12 @@ export default function Patients() {
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this patient?')) return;
-    await deletePatient(id);
-    load();
+    try {
+      await deletePatient(id);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Delete failed');
+    }
   };
 
   const handleAssignDoctor = async (patientId, doctorId) => {

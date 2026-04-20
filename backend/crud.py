@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timedelta
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 import models
 import schemas
@@ -38,7 +39,7 @@ def create_vitals(db: Session, vital):
     if isinstance(vital, dict):
         db_vital = models.Vitals(**vital)
     else:
-        db_vital = models.Vitals(**vital.dict())
+        db_vital = models.Vitals(**vital.model_dump())
     db.add(db_vital)
     db.commit()
     db.refresh(db_vital)
@@ -163,12 +164,22 @@ def create_alert(db: Session, patient_id: int, vital_id: int, alert_type: str):
     return new_alert
 
 
-def get_alerts(db: Session, status: str = None, doctor_id: int = None, limit: int = 100, offset: int = 0):
+def get_alerts(
+    db: Session,
+    status: str = None,
+    doctor_id: int = None,
+    nurse_id: int = None,
+    limit: int = 100,
+    offset: int = 0,
+):
     q = db.query(models.Alert)
     if status:
         q = q.filter(models.Alert.status == status)
     if doctor_id:
         patient_ids = [p.patient_id for p in get_patients_by_doctor(db, doctor_id)]
+        q = q.filter(models.Alert.patient_id.in_(patient_ids))
+    if nurse_id:
+        patient_ids = [p.patient_id for p in get_patients(db, nurse_id=nurse_id)]
         q = q.filter(models.Alert.patient_id.in_(patient_ids))
     return q.order_by(models.Alert.created_at.desc()).offset(offset).limit(limit).all()
 
@@ -427,7 +438,7 @@ def get_patient(db: Session, patient_id: int):
 
 
 def create_patient(db: Session, patient: schemas.PatientCreate, user_id: int):
-    db_patient = models.Patient(**patient.dict())
+    db_patient = models.Patient(**patient.model_dump())
     db.add(db_patient)
     db.commit()
     db.refresh(db_patient)
@@ -436,14 +447,43 @@ def create_patient(db: Session, patient: schemas.PatientCreate, user_id: int):
 
 
 def delete_patient(db: Session, patient_id: int, user_id: int):
-    """Hard delete: physically remove patient and all their vitals from the DB."""
+    """Hard delete: physically remove patient and all their related data from the DB.
+    Cascades: vitals, alerts, escalations, notifications, chat messages.
+    """
     patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
     if patient:
-        # Delete all vitals for this patient first (FK constraint)
+        # Get all alerts for this patient to delete related escalations/notifications
+        alerts = db.query(models.Alert).filter(models.Alert.patient_id == patient_id).all()
+        alert_ids = [a.alert_id for a in alerts]
+        
+        # Delete related escalations
+        if alert_ids:
+            db.query(models.AlertEscalation).filter(models.AlertEscalation.alert_id.in_(alert_ids)).delete()
+        
+        # Delete related notifications
+        if alert_ids:
+            db.query(models.AlertNotification).filter(models.AlertNotification.alert_id.in_(alert_ids)).delete()
+        
+        # Delete related WhatsApp logs
+        if alert_ids:
+            db.query(models.WhatsAppLog).filter(models.WhatsAppLog.alert_id.in_(alert_ids)).delete()
+        
+        # Delete SLA records
+        db.query(models.SLARecord).filter(models.SLARecord.patient_id == patient_id).delete()
+        
+        # Delete chat messages
+        db.query(models.ChatMessage).filter(models.ChatMessage.patient_id == patient_id).delete()
+        
+        # Delete alerts
+        db.query(models.Alert).filter(models.Alert.patient_id == patient_id).delete()
+        
+        # Delete all vitals
         db.query(models.Vitals).filter(models.Vitals.patient_id == patient_id).delete()
-        write_audit(db, "DELETE", "patient", entity_id=patient_id, user_id=user_id)
+        
+        # Delete patient first; audit only after successful commit.
         db.delete(patient)
         db.commit()
+        write_audit(db, "DELETE", "patient", entity_id=patient_id, user_id=user_id)
     return patient
 
 
@@ -506,7 +546,7 @@ def get_doctor(db: Session, doctor_id: int):
 
 
 def create_doctor(db: Session, doctor: schemas.DoctorCreate, user_id: int):
-    doctor_data = doctor.dict(exclude={"username", "password"})
+    doctor_data = doctor.model_dump(exclude={"username", "password"})
     db_doctor = models.Doctor(**doctor_data)
     db.add(db_doctor)
     db.commit()
@@ -521,15 +561,26 @@ def create_doctor(db: Session, doctor: schemas.DoctorCreate, user_id: int):
 
 def delete_doctor(db: Session, doctor_id: int, user_id: int):
     """Hard delete: physically remove doctor from the DB.
-    Also nullifies doctor_id on any linked user accounts.
+    Handles all FK constraints:
+    - Nullifies patient.assigned_doctor
+    - Deletes alert escalations assigned to this doctor
+    - Nullifies user.doctor_id
     """
     doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == doctor_id).first()
     if doctor:
-        # Nullify FK on linked user accounts before deleting
+        # 1. Nullify FK on linked patient records
+        db.query(models.Patient).filter(models.Patient.assigned_doctor == doctor_id).update({"assigned_doctor": None})
+        
+        # 2. Delete alert escalations assigned to this doctor
+        db.query(models.AlertEscalation).filter(models.AlertEscalation.escalated_to_doctor == doctor_id).delete()
+        
+        # 3. Nullify FK on linked user accounts
         db.query(models.User).filter(models.User.doctor_id == doctor_id).update({"doctor_id": None})
-        write_audit(db, "DELETE", "doctor", entity_id=doctor_id, user_id=user_id)
+        
+        # 4. Delete doctor first; audit only after successful commit.
         db.delete(doctor)
         db.commit()
+        write_audit(db, "DELETE", "doctor", entity_id=doctor_id, user_id=user_id)
     return doctor
 
 
@@ -554,7 +605,7 @@ def get_nurse(db: Session, nurse_id: int):
 
 
 def create_nurse(db: Session, nurse: schemas.NurseCreate, user_id: int):
-    nurse_data = nurse.dict(exclude={"username", "password"})
+    nurse_data = nurse.model_dump(exclude={"username", "password"})
     db_nurse = models.Nurse(**nurse_data)
     db.add(db_nurse)
     db.commit()
@@ -575,9 +626,10 @@ def delete_nurse(db: Session, nurse_id: int, user_id: int):
     if nurse:
         # Nullify FK on linked user accounts before deleting
         db.query(models.User).filter(models.User.nurse_id == nurse_id).update({"nurse_id": None})
-        write_audit(db, "DELETE", "nurse", entity_id=nurse_id, user_id=user_id)
+        # Delete nurse first; audit only after successful commit.
         db.delete(nurse)
         db.commit()
+        write_audit(db, "DELETE", "nurse", entity_id=nurse_id, user_id=user_id)
     return nurse
 
 
@@ -587,7 +639,7 @@ def get_hospitals(db: Session):
 
 
 def create_hospital(db: Session, hospital: schemas.HospitalCreate):
-    db_hospital = models.Hospital(**hospital.dict())
+    db_hospital = models.Hospital(**hospital.model_dump())
     db.add(db_hospital)
     db.commit()
     db.refresh(db_hospital)
@@ -596,15 +648,70 @@ def create_hospital(db: Session, hospital: schemas.HospitalCreate):
 
 
 # ── Dashboard Stats ───────────────────────────────────────────────────────────
-def get_dashboard_stats(db: Session):
+def _duplicate_vitals_count_for_patients(db: Session, patient_ids: list[int] | None = None) -> int:
+    q = (
+        db.query(
+            models.Vitals.patient_id,
+            models.Vitals.timestamp,
+            func.count(models.Vitals.vital_id).label("c"),
+        )
+        .group_by(models.Vitals.patient_id, models.Vitals.timestamp)
+        .having(func.count(models.Vitals.vital_id) > 1)
+    )
+    if patient_ids is not None:
+        if not patient_ids:
+            return 0
+        q = q.filter(models.Vitals.patient_id.in_(patient_ids))
+    return q.count()
+
+
+def get_dashboard_stats(db: Session, current_user: models.User):
+    patient_q = db.query(models.Patient)
+    alert_q = db.query(models.Alert)
+    patient_ids_for_scope = None
+
+    if current_user.role == "DOCTOR":
+        if not current_user.doctor_id:
+            return schemas.DashboardStats(
+                total_patients=0,
+                total_doctors=0,
+                total_nurses=0,
+                total_hospitals=0,
+                pending_alerts=0,
+                escalated_alerts=0,
+                acknowledged_alerts=0,
+                duplicate_vitals_count=0,
+            )
+        patient_q = patient_q.filter(models.Patient.assigned_doctor == current_user.doctor_id)
+        patient_ids_for_scope = [p.patient_id for p in get_patients_by_doctor(db, current_user.doctor_id)]
+        alert_q = alert_q.filter(models.Alert.patient_id.in_(patient_ids_for_scope or [-1]))
+    elif current_user.role == "NURSE":
+        if not current_user.nurse_id:
+            return schemas.DashboardStats(
+                total_patients=0,
+                total_doctors=0,
+                total_nurses=0,
+                total_hospitals=0,
+                pending_alerts=0,
+                escalated_alerts=0,
+                acknowledged_alerts=0,
+                duplicate_vitals_count=0,
+            )
+        patient_q = patient_q.filter(models.Patient.assigned_nurse == current_user.nurse_id)
+        patient_ids_for_scope = [
+            p.patient_id for p in get_patients(db, nurse_id=current_user.nurse_id)
+        ]
+        alert_q = alert_q.filter(models.Alert.patient_id.in_(patient_ids_for_scope or [-1]))
+
     return schemas.DashboardStats(
-        total_patients=db.query(models.Patient).count(),
+        total_patients=patient_q.count(),
         total_doctors=db.query(models.Doctor).count(),
         total_nurses=db.query(models.Nurse).count(),
         total_hospitals=db.query(models.Hospital).count(),
-        pending_alerts=db.query(models.Alert).filter(models.Alert.status == "PENDING").count(),
-        escalated_alerts=db.query(models.Alert).filter(models.Alert.status == "ESCALATED").count(),
-        acknowledged_alerts=db.query(models.Alert).filter(models.Alert.status == "ACKNOWLEDGED").count(),
+        pending_alerts=alert_q.filter(models.Alert.status == "PENDING").count(),
+        escalated_alerts=alert_q.filter(models.Alert.status == "ESCALATED").count(),
+        acknowledged_alerts=alert_q.filter(models.Alert.status == "ACKNOWLEDGED").count(),
+        duplicate_vitals_count=_duplicate_vitals_count_for_patients(db, patient_ids_for_scope),
     )
 
 

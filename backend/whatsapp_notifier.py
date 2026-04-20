@@ -21,7 +21,7 @@ Docs: https://green-api.com/en/docs/api/sending/SendMessage/
 import os
 import logging
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ def track_pending_response(alert_id: int, doctor_phone: str, patient_name: str,
                 "patient_id": patient_id,
                 "room_number": room_number,
                 "vital_data": vital_data,
-                "sent_at": datetime.utcnow(),
+                "sent_at": datetime.now(timezone.utc),
                 "hospital_id": hospital_id,
                 "escalated": False,
             }
@@ -123,7 +123,7 @@ def acknowledge_alert_by_id(alert_id: int, doctor_phone: str = None) -> bool:
 
 def get_unresponded_alerts() -> list:
     """Return alerts that have not been acknowledged within ESCALATION_TIMEOUT_MINUTES."""
-    cutoff = datetime.utcnow() - timedelta(minutes=ESCALATION_TIMEOUT_MINUTES)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=ESCALATION_TIMEOUT_MINUTES)
     unresponded = []
     with _pending_lock:
         for alert_id, data in _pending_responses.items():

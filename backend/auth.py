@@ -19,7 +19,17 @@ from database import SessionLocal, get_redis_client
 from logger import log_security_event
 
 # ── Settings ──────────────────────────────────────────────────────────────────
-SECRET_KEY = os.getenv("SECRET_KEY", "iot-healthcare-super-secret-key-change-in-production")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY must be set in the environment.")
+_weak_secret_markers = (
+    "change-me",
+    "super-secret-key-change-in-production",
+    "test-secret-key",
+)
+if any(marker in SECRET_KEY.lower() for marker in _weak_secret_markers):
+    raise RuntimeError("SECRET_KEY is insecure. Set a strong random secret key.")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))

@@ -19,7 +19,9 @@ load_dotenv(dotenv_path=backend_env)
 
 
 # Match backend auth settings from backend/auth.py
-SECRET_KEY = os.getenv("SECRET_KEY", "iot-healthcare-super-secret-key-change-in-production")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY must be set in backend/.env before generating tokens.")
 ALGORITHM = "HS256"
 
 

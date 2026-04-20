@@ -242,7 +242,8 @@ Create `backend/.env` from `backend/.env.example`.
 
 ```env
 DATABASE_URL=postgresql://user:password@localhost:5432/patient_monitor
-SECRET_KEY=change-me-use-openssl-rand-hex-32
+SECRET_KEY=<long-random-secret-at-least-32-chars>
+ADMIN_PASSWORD=<strong-admin-password>
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 DATA_SOURCE=fake
 CORS_ORIGINS=http://localhost,http://localhost:3000,http://localhost:5173
@@ -418,6 +419,41 @@ python ws_auth_test.py
 ## 12. Deployment
 
 ## Local Production-Like Deployment
+
+## 13. Runtime Troubleshooting (Live Updates / Docker Logs)
+
+If you still see live vitals/alerts even when you did not run `docker compose up`, one of these is already running in the background:
+- local backend (`uvicorn main:app`)
+- local scheduler (`python scheduler.py`)
+- previously started Docker containers
+
+Use these checks:
+
+```bash
+docker compose ps
+lsof -nP -iTCP:8000 -sTCP:LISTEN
+ps -ax | grep -E "uvicorn main:app|python scheduler.py" | grep -v grep
+```
+
+If you run `docker compose up` without `-d`, logs from backend/scheduler are expected in the terminal (this includes generated vitals and alert events).
+
+For normal use, prefer detached mode:
+
+```bash
+docker compose up -d --build
+docker compose logs -f backend scheduler
+```
+
+If backend/scheduler repeatedly fail with PostgreSQL password errors after old volume reuse, either:
+
+```bash
+# Option A: reset postgres password inside DB container
+docker exec iot_healthcare-db-1 sh -lc "psql -U postgres -d postgres -c \"ALTER USER postgres WITH PASSWORD '${POSTGRES_PASSWORD}';\""
+
+# Option B: recreate all compose volumes (fresh DB)
+docker compose down -v
+docker compose up -d --build
+```
 
 Use Docker Compose:
 ```bash
