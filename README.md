@@ -484,6 +484,49 @@ Use Docker Compose:
 docker compose up -d --build
 ```
 
+### Hardened Production Deployment (recommended)
+
+Use the production override so database/redis/backend are not exposed on host ports.
+
+1) Create production env file:
+
+```bash
+cp .env.production.example .env
+```
+
+2) Set strong values in `.env`:
+- `POSTGRES_PASSWORD`
+- `SECRET_KEY`
+- `ADMIN_PASSWORD`
+- `CORS_ORIGINS` (your real domain)
+- `GREEN_API_ID` / `GREEN_API_TOKEN` (if WhatsApp is enabled)
+
+3) Deploy with base + production override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+4) Validate:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+curl -sS http://localhost/ -I
+curl -sS http://localhost/api/health
+```
+
+5) View logs:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f backend scheduler frontend
+```
+
+This production mode additionally enables:
+- internal-only DB/Redis/API ports
+- secure auth cookie flag (`COOKIE_SECURE=true`)
+- no-new-privileges + dropped Linux capabilities for app containers
+- basic container log rotation
+
 This launches:
 - PostgreSQL
 - Redis
