@@ -15,10 +15,6 @@ _source_signature: tuple[Any, ...] | None = None
 
 _SETTING_KEYS = {
     "source": "vitals.source",
-    "thingspeak_channel_id": "vitals.thingspeak.channel_id",
-    "thingspeak_read_api_key": "vitals.thingspeak.read_api_key",
-    "thingspeak_temp_unit": "vitals.thingspeak.temp_unit",
-    "thingspeak_stale_seconds": "vitals.thingspeak.stale_seconds",
 }
 
 _DEFAULT_CONFIG = {
@@ -49,10 +45,6 @@ def _read_db_overrides(db) -> dict[str, Any]:
     values = {row.setting_key: row.setting_value for row in rows}
     return {
         "source": values.get(_SETTING_KEYS["source"]),
-        "thingspeak_channel_id": values.get(_SETTING_KEYS["thingspeak_channel_id"]),
-        "thingspeak_read_api_key": values.get(_SETTING_KEYS["thingspeak_read_api_key"]),
-        "thingspeak_temp_unit": values.get(_SETTING_KEYS["thingspeak_temp_unit"]),
-        "thingspeak_stale_seconds": values.get(_SETTING_KEYS["thingspeak_stale_seconds"]),
     }
 
 
@@ -97,7 +89,9 @@ def get_data_source_config() -> dict[str, Any]:
     db = SessionLocal()
     try:
         merged = dict(_DEFAULT_CONFIG)
-        merged.update({k: v for k, v in _read_db_overrides(db).items() if v is not None})
+        source_override = _read_db_overrides(db).get("source")
+        if source_override is not None:
+            merged["source"] = source_override
         return _normalize_config(merged)
     finally:
         db.close()
@@ -106,21 +100,8 @@ def get_data_source_config() -> dict[str, Any]:
 def update_data_source_config(
     *,
     source: str,
-    thingspeak_channel_id: str | None = None,
-    thingspeak_read_api_key: str | None = None,
-    thingspeak_temp_unit: str | None = None,
-    thingspeak_stale_seconds: int | None = None,
 ) -> dict[str, Any]:
     updates = {"source": source}
-    if thingspeak_channel_id is not None:
-        updates["thingspeak_channel_id"] = thingspeak_channel_id
-    if thingspeak_read_api_key is not None:
-        updates["thingspeak_read_api_key"] = thingspeak_read_api_key
-    if thingspeak_temp_unit is not None:
-        updates["thingspeak_temp_unit"] = thingspeak_temp_unit
-    if thingspeak_stale_seconds is not None:
-        updates["thingspeak_stale_seconds"] = thingspeak_stale_seconds
-
     current = get_data_source_config()
     current.update(updates)
     normalized = _normalize_config(current)
@@ -129,36 +110,7 @@ def update_data_source_config(
 
     db = SessionLocal()
     try:
-        if "source" in updates:
-            db.merge(AppSetting(setting_key=_SETTING_KEYS["source"], setting_value=normalized["source"]))
-        if "thingspeak_channel_id" in updates:
-            db.merge(
-                AppSetting(
-                    setting_key=_SETTING_KEYS["thingspeak_channel_id"],
-                    setting_value=normalized["thingspeak_channel_id"],
-                )
-            )
-        if "thingspeak_read_api_key" in updates:
-            db.merge(
-                AppSetting(
-                    setting_key=_SETTING_KEYS["thingspeak_read_api_key"],
-                    setting_value=normalized["thingspeak_read_api_key"],
-                )
-            )
-        if "thingspeak_temp_unit" in updates:
-            db.merge(
-                AppSetting(
-                    setting_key=_SETTING_KEYS["thingspeak_temp_unit"],
-                    setting_value=normalized["thingspeak_temp_unit"],
-                )
-            )
-        if "thingspeak_stale_seconds" in updates:
-            db.merge(
-                AppSetting(
-                    setting_key=_SETTING_KEYS["thingspeak_stale_seconds"],
-                    setting_value=str(normalized["thingspeak_stale_seconds"]),
-                )
-            )
+        db.merge(AppSetting(setting_key=_SETTING_KEYS["source"], setting_value=normalized["source"]))
         db.commit()
     finally:
         db.close()

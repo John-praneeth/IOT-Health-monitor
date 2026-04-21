@@ -338,7 +338,3 @@ class VitalsSourceConfigOut(BaseModel):
 
 class VitalsSourceConfigUpdate(BaseModel):
     source: str = Field(..., pattern=r"^(fake|thingspeak)$")
-    thingspeak_channel_id: Optional[str] = None
-    thingspeak_read_api_key: Optional[str] = None
-    thingspeak_temp_unit: Optional[str] = Field(None, pattern=r"^(F|C)$")
-    thingspeak_stale_seconds: Optional[int] = Field(None, ge=10, le=3600)

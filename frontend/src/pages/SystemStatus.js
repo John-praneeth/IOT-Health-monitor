@@ -15,10 +15,6 @@ export default function SystemStatus() {
   const [sourceConfig, setSourceConfig] = useState(null);
   const [sourceForm, setSourceForm] = useState({
     source: 'fake',
-    thingspeak_channel_id: '',
-    thingspeak_read_api_key: '',
-    thingspeak_temp_unit: 'F',
-    thingspeak_stale_seconds: 120,
   });
   const [savingSource, setSavingSource] = useState(false);
   const [sourceMessage, setSourceMessage] = useState('');
@@ -41,10 +37,6 @@ export default function SystemStatus() {
         setSourceConfig(sourceRes.data);
         setSourceForm({
           source: sourceRes.data.source,
-          thingspeak_channel_id: sourceRes.data.thingspeak_channel_id || '',
-          thingspeak_read_api_key: '',
-          thingspeak_temp_unit: sourceRes.data.thingspeak_temp_unit || 'F',
-          thingspeak_stale_seconds: sourceRes.data.thingspeak_stale_seconds || 120,
         });
       }
     } catch (err) {
@@ -115,20 +107,8 @@ export default function SystemStatus() {
     setSavingSource(true);
     setSourceMessage('');
     try {
-      const payload = {
-        source: sourceForm.source,
-        thingspeak_temp_unit: sourceForm.thingspeak_temp_unit,
-        thingspeak_stale_seconds: Number(sourceForm.thingspeak_stale_seconds),
-      };
-      if (sourceForm.thingspeak_channel_id.trim()) {
-        payload.thingspeak_channel_id = sourceForm.thingspeak_channel_id.trim();
-      }
-      if (sourceForm.thingspeak_read_api_key.trim()) {
-        payload.thingspeak_read_api_key = sourceForm.thingspeak_read_api_key.trim();
-      }
-      const res = await updateVitalsSourceConfig(payload);
+      const res = await updateVitalsSourceConfig({ source: sourceForm.source });
       setSourceConfig(res.data);
-      setSourceForm((prev) => ({ ...prev, thingspeak_read_api_key: '' }));
       setSourceMessage('Vitals source updated.');
     } catch (err) {
       setSourceMessage(err?.response?.data?.detail || 'Failed to update vitals source.');
@@ -243,68 +223,29 @@ export default function SystemStatus() {
       {isAdmin && (
         <div style={{ ...card, marginBottom: 28 }}>
           <h3 style={{ color: '#e2e8f0', fontSize: 15, marginBottom: 14 }}>🧪 Vitals Data Source</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(240px, 1fr))', gap: 12 }}>
-            <div>
-              <label style={{ color: '#94a3b8', fontSize: 12 }}>Source</label>
-              <select
-                value={sourceForm.source}
-                onChange={(e) => setSourceForm((prev) => ({ ...prev, source: e.target.value }))}
-                style={{ width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
-              >
-                <option value="fake">Fake vitals (demo)</option>
-                <option value="thingspeak">ThingSpeak (real hardware)</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ color: '#94a3b8', fontSize: 12 }}>ThingSpeak Channel ID</label>
-              <input
-                value={sourceForm.thingspeak_channel_id}
-                onChange={(e) => setSourceForm((prev) => ({ ...prev, thingspeak_channel_id: e.target.value }))}
-                style={{ width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
-              />
-            </div>
-            <div>
-              <label style={{ color: '#94a3b8', fontSize: 12 }}>ThingSpeak Read API Key (optional)</label>
-              <input
-                value={sourceForm.thingspeak_read_api_key}
-                onChange={(e) => setSourceForm((prev) => ({ ...prev, thingspeak_read_api_key: e.target.value }))}
-                placeholder={sourceConfig?.thingspeak_read_api_key_set ? 'Configured (leave blank to keep)' : ''}
-                style={{ width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
-              />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <label style={{ color: '#94a3b8', fontSize: 12 }}>Temperature Unit</label>
-                <select
-                  value={sourceForm.thingspeak_temp_unit}
-                  onChange={(e) => setSourceForm((prev) => ({ ...prev, thingspeak_temp_unit: e.target.value }))}
-                  style={{ width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
-                >
-                  <option value="F">Fahrenheit</option>
-                  <option value="C">Celsius</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ color: '#94a3b8', fontSize: 12 }}>Stale Threshold (sec)</label>
-                <input
-                  type="number"
-                  min={10}
-                  max={3600}
-                  value={sourceForm.thingspeak_stale_seconds}
-                  onChange={(e) => setSourceForm((prev) => ({ ...prev, thingspeak_stale_seconds: e.target.value }))}
-                  style={{ width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' }}
-                />
-              </div>
-            </div>
-          </div>
-          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 10 }}>
+            Current source: <strong style={{ color: '#e2e8f0' }}>{sourceConfig?.source || sourceForm.source}</strong>
+          </p>
+          <p style={{ color: '#64748b', fontSize: 12, marginTop: 0, marginBottom: 12 }}>
+            ThingSpeak connection details are configured in backend environment variables.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={() => setSourceForm((prev) => ({ ...prev, source: prev.source === 'fake' ? 'thingspeak' : 'fake' }))}
+              disabled={savingSource}
+              style={{ padding: '8px 16px', borderRadius: 7, border: '1px solid #475569', background: '#0f172a', color: '#93c5fd', fontWeight: 600, cursor: savingSource ? 'not-allowed' : 'pointer', opacity: savingSource ? 0.6 : 1 }}
+            >
+              Switch to {sourceForm.source === 'fake' ? 'ThingSpeak' : 'Fake'}
+            </button>
             <button
               onClick={saveSourceConfig}
               disabled={savingSource}
               style={{ padding: '8px 16px', borderRadius: 7, border: '1px solid #475569', background: '#1d4ed8', color: '#fff', fontWeight: 600, cursor: savingSource ? 'not-allowed' : 'pointer', opacity: savingSource ? 0.6 : 1 }}
             >
-              {savingSource ? 'Saving…' : 'Save Source Settings'}
+              {savingSource ? 'Saving…' : 'Apply Source'}
             </button>
+          </div>
+          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
             {sourceMessage && <span style={{ color: sourceMessage.includes('Failed') ? '#f87171' : '#4ade80', fontSize: 12 }}>{sourceMessage}</span>}
           </div>
         </div>

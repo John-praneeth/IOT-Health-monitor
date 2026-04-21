@@ -1715,13 +1715,7 @@ def update_vitals_source_config(
 ):
     _ = current_user
     try:
-        config = data_sources.update_data_source_config(
-            source=payload.source,
-            thingspeak_channel_id=payload.thingspeak_channel_id,
-            thingspeak_read_api_key=payload.thingspeak_read_api_key,
-            thingspeak_temp_unit=payload.thingspeak_temp_unit,
-            thingspeak_stale_seconds=payload.thingspeak_stale_seconds,
-        )
+        config = data_sources.update_data_source_config(source=payload.source)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
