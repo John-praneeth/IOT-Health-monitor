@@ -107,6 +107,7 @@ def get_vitals(
     patient_id: int = None,
     doctor_id: int = None,
     nurse_id: int = None,
+    patient_ids: list[int] | None = None,
     limit: int = 50,
     offset: int = 0,
 ):
@@ -118,6 +119,10 @@ def get_vitals(
         q = q.filter(models.Vitals.patient_id.in_(patient_ids))
     if nurse_id:
         patient_ids = [p.patient_id for p in get_patients(db, nurse_id=nurse_id)]
+        q = q.filter(models.Vitals.patient_id.in_(patient_ids))
+    if patient_ids is not None:
+        if not patient_ids:
+            return []
         q = q.filter(models.Vitals.patient_id.in_(patient_ids))
     return q.order_by(models.Vitals.timestamp.desc()).offset(offset).limit(limit).all()
 
@@ -169,6 +174,7 @@ def get_alerts(
     status: str = None,
     doctor_id: int = None,
     nurse_id: int = None,
+    patient_ids: list[int] | None = None,
     limit: int = 100,
     offset: int = 0,
 ):
@@ -180,6 +186,10 @@ def get_alerts(
         q = q.filter(models.Alert.patient_id.in_(patient_ids))
     if nurse_id:
         patient_ids = [p.patient_id for p in get_patients(db, nurse_id=nurse_id)]
+        q = q.filter(models.Alert.patient_id.in_(patient_ids))
+    if patient_ids is not None:
+        if not patient_ids:
+            return []
         q = q.filter(models.Alert.patient_id.in_(patient_ids))
     return q.order_by(models.Alert.created_at.desc()).offset(offset).limit(limit).all()
 
@@ -415,12 +425,23 @@ def _enrich_patient(patient):
     return patient
 
 
-def get_patients(db: Session, doctor_id: int = None, nurse_id: int = None, limit: int = 200, offset: int = 0):
+def get_patients(
+    db: Session,
+    doctor_id: int = None,
+    nurse_id: int = None,
+    patient_ids: list[int] | None = None,
+    limit: int = 200,
+    offset: int = 0,
+):
     q = db.query(models.Patient)
     if doctor_id:
         q = q.filter(models.Patient.assigned_doctor == doctor_id)
     if nurse_id:
         q = q.filter(models.Patient.assigned_nurse == nurse_id)
+    if patient_ids is not None:
+        if not patient_ids:
+            return []
+        q = q.filter(models.Patient.patient_id.in_(patient_ids))
     return [_enrich_patient(p) for p in q.offset(offset).limit(limit).all()]
 
 
@@ -444,6 +465,18 @@ def create_patient(db: Session, patient: schemas.PatientCreate, user_id: int):
     db.refresh(db_patient)
     write_audit(db, "CREATE", "patient", entity_id=db_patient.patient_id, user_id=user_id)
     return _enrich_patient(db_patient)
+
+
+def update_patient(db: Session, patient_id: int, payload: schemas.PatientUpdate, user_id: int):
+    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+    if not patient:
+        return None
+    for field, value in payload.model_dump().items():
+        setattr(patient, field, value)
+    db.commit()
+    db.refresh(patient)
+    write_audit(db, "UPDATE", "patient", entity_id=patient_id, user_id=user_id)
+    return _enrich_patient(patient)
 
 
 def delete_patient(db: Session, patient_id: int, user_id: int):
@@ -559,6 +592,18 @@ def create_doctor(db: Session, doctor: schemas.DoctorCreate, user_id: int):
     return _enrich_doctor(db_doctor)
 
 
+def update_doctor(db: Session, doctor_id: int, payload: schemas.DoctorUpdate, user_id: int):
+    doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == doctor_id).first()
+    if not doctor:
+        return None
+    for field, value in payload.model_dump().items():
+        setattr(doctor, field, value)
+    db.commit()
+    db.refresh(doctor)
+    write_audit(db, "UPDATE", "doctor", entity_id=doctor_id, user_id=user_id)
+    return _enrich_doctor(doctor)
+
+
 def delete_doctor(db: Session, doctor_id: int, user_id: int):
     """Hard delete: physically remove doctor from the DB.
     Handles all FK constraints:
@@ -616,6 +661,18 @@ def create_nurse(db: Session, nurse: schemas.NurseCreate, user_id: int):
         import auth as _auth
         _auth.create_user(db, nurse.username, nurse.password, "NURSE", nurse_id=db_nurse.nurse_id)
     return _enrich_nurse(db_nurse)
+
+
+def update_nurse(db: Session, nurse_id: int, payload: schemas.NurseUpdate, user_id: int):
+    nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == nurse_id).first()
+    if not nurse:
+        return None
+    for field, value in payload.model_dump().items():
+        setattr(nurse, field, value)
+    db.commit()
+    db.refresh(nurse)
+    write_audit(db, "UPDATE", "nurse", entity_id=nurse_id, user_id=user_id)
+    return _enrich_nurse(nurse)
 
 
 def delete_nurse(db: Session, nurse_id: int, user_id: int):
@@ -682,8 +739,21 @@ def get_dashboard_stats(db: Session, current_user: models.User):
                 acknowledged_alerts=0,
                 duplicate_vitals_count=0,
             )
-        patient_q = patient_q.filter(models.Patient.assigned_doctor == current_user.doctor_id)
-        patient_ids_for_scope = [p.patient_id for p in get_patients_by_doctor(db, current_user.doctor_id)]
+        doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == current_user.doctor_id).first()
+        if doctor and doctor.hospital_id:
+            patient_q = patient_q.filter(
+                (models.Patient.assigned_doctor == current_user.doctor_id)
+                | (models.Patient.hospital_id == doctor.hospital_id)
+            )
+            patient_ids_for_scope = [
+                row[0] for row in db.query(models.Patient.patient_id).filter(
+                    (models.Patient.assigned_doctor == current_user.doctor_id)
+                    | (models.Patient.hospital_id == doctor.hospital_id)
+                ).all()
+            ]
+        else:
+            patient_q = patient_q.filter(models.Patient.assigned_doctor == current_user.doctor_id)
+            patient_ids_for_scope = [p.patient_id for p in get_patients_by_doctor(db, current_user.doctor_id)]
         alert_q = alert_q.filter(models.Alert.patient_id.in_(patient_ids_for_scope or [-1]))
     elif current_user.role == "NURSE":
         if not current_user.nurse_id:
@@ -697,10 +767,23 @@ def get_dashboard_stats(db: Session, current_user: models.User):
                 acknowledged_alerts=0,
                 duplicate_vitals_count=0,
             )
-        patient_q = patient_q.filter(models.Patient.assigned_nurse == current_user.nurse_id)
-        patient_ids_for_scope = [
-            p.patient_id for p in get_patients(db, nurse_id=current_user.nurse_id)
-        ]
+        nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == current_user.nurse_id).first()
+        if nurse and nurse.hospital_id:
+            patient_q = patient_q.filter(
+                (models.Patient.assigned_nurse == current_user.nurse_id)
+                | (models.Patient.hospital_id == nurse.hospital_id)
+            )
+            patient_ids_for_scope = [
+                row[0] for row in db.query(models.Patient.patient_id).filter(
+                    (models.Patient.assigned_nurse == current_user.nurse_id)
+                    | (models.Patient.hospital_id == nurse.hospital_id)
+                ).all()
+            ]
+        else:
+            patient_q = patient_q.filter(models.Patient.assigned_nurse == current_user.nurse_id)
+            patient_ids_for_scope = [
+                p.patient_id for p in get_patients(db, nurse_id=current_user.nurse_id)
+            ]
         alert_q = alert_q.filter(models.Alert.patient_id.in_(patient_ids_for_scope or [-1]))
 
     return schemas.DashboardStats(

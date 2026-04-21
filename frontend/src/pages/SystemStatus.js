@@ -29,14 +29,21 @@ export default function SystemStatus() {
         getHealthFull(),
       ];
       if (isAdmin) requests.push(getVitalsSourceConfig());
-      const responses = await Promise.all(requests);
+      const responses = await Promise.allSettled(requests);
       const [statsRes, healthRes, sourceRes] = responses;
-      setStats(statsRes.data);
-      setHealth(healthRes.data);
-      if (isAdmin && sourceRes?.data) {
-        setSourceConfig(sourceRes.data);
+
+      if (statsRes.status === 'fulfilled') {
+        setStats(statsRes.value.data);
+      }
+      if (healthRes.status === 'fulfilled') {
+        setHealth(healthRes.value.data);
+      } else {
+        setHealth({ status: 'error', db: { status: 'error', detail: 'Backend unreachable' }, redis: { status: 'error', detail: 'Backend unreachable' }, whatsapp: { status: 'unknown', detail: 'Backend unreachable' } });
+      }
+      if (isAdmin && sourceRes?.status === 'fulfilled' && sourceRes.value?.data) {
+        setSourceConfig(sourceRes.value.data);
         setSourceForm({
-          source: sourceRes.data.source,
+          source: sourceRes.value.data.source,
         });
       }
     } catch (err) {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getNurses, createNurse, deleteNurse, getNursePatients, getHospitals } from '../api';
+import { getNurses, createNurse, updateNurse, deleteNurse, getNursePatients, getHospitals } from '../api';
 
 const COUNTRY_CODES = [
   { code: '91',  label: '🇮🇳 +91' },
@@ -37,8 +37,11 @@ export default function Nurses() {
   const [patients,  setPatients]  = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState('');
+  const [editing,   setEditing]   = useState(null);
+  const [editForm,  setEditForm]  = useState(EMPTY);
 
   const role = localStorage.getItem('role');
+  const myNurseId = localStorage.getItem('nurse_id');
   const canManage = role === 'ADMIN' || role === 'DOCTOR';
 
   const load = async () => {
@@ -82,6 +85,39 @@ export default function Nurses() {
       setPatients(res.data);
       setExpanded(id);
     } catch { setError('Failed to load assigned patients'); }
+  };
+
+  const canEditNurse = (nurseId) => canManage || (role === 'NURSE' && String(myNurseId) === String(nurseId));
+
+  const openEdit = (n) => {
+    setEditing(n);
+    setEditForm({
+      name: n.name || '',
+      department: n.department || 'General',
+      phone: n.phone || '',
+      email: n.email || '',
+      hospital_id: n.hospital_id ? String(n.hospital_id) : '',
+      username: '',
+      password: '',
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    setError('');
+    try {
+      await updateNurse(editing.nurse_id, {
+        name: editForm.name,
+        department: editForm.department,
+        hospital_id: editForm.hospital_id ? Number(editForm.hospital_id) : null,
+        phone: editForm.phone || null,
+        email: editForm.email || null,
+      });
+      setEditing(null);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Update failed');
+    }
   };
 
   return (
@@ -189,6 +225,9 @@ export default function Nurses() {
                       <button className="btn btn-primary btn-sm" onClick={() => togglePatients(n.nurse_id)}>
                         {expanded === n.nurse_id ? '▲ Hide' : '▼ Patients'}
                       </button>
+                      {canEditNurse(n.nurse_id) && (
+                        <button className="btn btn-success btn-sm" onClick={() => openEdit(n)}>✏️ Edit</button>
+                      )}
                       {canManage && (
                         <button className="btn btn-danger btn-sm" onClick={() => handleDelete(n.nurse_id)}>🗑</button>
                       )}
@@ -220,6 +259,25 @@ export default function Nurses() {
           </table>
         )}
       </div>
+
+      {editing && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:999 }} onClick={() => setEditing(null)}>
+          <div style={{ background:'#1e293b', borderRadius:16, padding:24, width:520, border:'1px solid #334155' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ color:'#e2e8f0', marginTop:0 }}>✏️ Edit Nurse</h3>
+            <div className="form-grid" style={{ padding:0 }}>
+              <div className="form-group"><label>Name</label><input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></div>
+              <div className="form-group"><label>Department</label><select value={editForm.department} onChange={e => setEditForm({ ...editForm, department: e.target.value })}>{DEPARTMENTS.map(d => <option key={d}>{d}</option>)}</select></div>
+              <div className="form-group"><label>Hospital</label><select value={editForm.hospital_id} onChange={e => setEditForm({ ...editForm, hospital_id: e.target.value })}><option value="">— None —</option>{hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}</select></div>
+              <div className="form-group"><label>Phone</label><input value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} /></div>
+              <div className="form-group"><label>Email</label><input value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
+            </div>
+            <div style={{ display:'flex', gap:10, marginTop:12 }}>
+              <button className="btn btn-success" onClick={saveEdit}>Save Changes</button>
+              <button className="btn" style={{ background:'#334155', color:'#e2e8f0' }} onClick={() => setEditing(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -337,6 +337,12 @@ def can_access_patient_abac(db, current_user, patient) -> bool:
         return False
 
     if current_user.role == "NURSE":
-        return bool(current_user.nurse_id and patient.assigned_nurse == current_user.nurse_id)
+        if current_user.nurse_id and patient.assigned_nurse == current_user.nurse_id:
+            return True
+        if current_user.nurse_id and patient.hospital_id:
+            nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == current_user.nurse_id).first()
+            if nurse and nurse.hospital_id and nurse.hospital_id == patient.hospital_id:
+                return True
+        return False
 
     return False

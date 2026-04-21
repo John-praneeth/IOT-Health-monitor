@@ -49,6 +49,15 @@ class PatientCreate(PatientBase):
     pass
 
 
+class PatientUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    age: int = Field(..., ge=0, le=130)
+    room_number: str = Field(..., min_length=1, max_length=20)
+    hospital_id: Optional[int] = None
+    assigned_doctor: Optional[int] = None
+    assigned_nurse: Optional[int] = None
+
+
 class PatientOut(PatientBase):
     patient_id: int
     doctor_name: Optional[str] = None
@@ -91,6 +100,16 @@ class DoctorCreate(DoctorBase):
     password: Optional[str] = None   # required when username is provided
 
 
+class DoctorUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    specialization: Optional[str] = Field(None, max_length=100)
+    hospital_id: Optional[int] = None
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[str] = Field(None, max_length=100)
+    is_freelancer: Optional[bool] = False
+    is_available: Optional[bool] = True
+
+
 class DoctorOut(DoctorBase):
     doctor_id: int
     hospital_name: Optional[str] = None
@@ -122,6 +141,14 @@ class NurseBase(BaseModel):
 class NurseCreate(NurseBase):
     username: Optional[str] = None   # if set, a login account is created
     password: Optional[str] = None   # required when username is provided
+
+
+class NurseUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    department: Optional[str] = Field(None, max_length=100)
+    hospital_id: Optional[int] = None
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[str] = Field(None, max_length=100)
 
 
 class NurseOut(NurseBase):
@@ -175,6 +202,11 @@ class LoginRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+    new_password: str = Field(..., min_length=6, max_length=200)
+
+
+class ForgotPasswordRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=100)
     new_password: str = Field(..., min_length=6, max_length=200)
 

@@ -37,11 +37,13 @@ export const registerNurse    = (data) => API.post('/auth/register/nurse', data)
 export const login            = (data) => API.post('/auth/login', data);
 export const getMe            = ()     => API.get('/auth/me');
 export const resetPassword    = (data) => API.post('/auth/reset-password', data);
+export const forgotPassword   = (data) => API.post('/auth/forgot-password', data);
 
 // ── Patients ──────────────────────────────────────────────
 export const getPatients   = (params={})     => API.get('/patients', { params });
 export const createPatient = (data)          => API.post('/patients', data);
 export const deletePatient = (id)            => API.delete(`/patients/${id}`);
+export const updatePatient = (id, data)      => API.put(`/patients/${id}`, data);
 export const assignDoctor  = (id, doctorId)  => API.patch(`/patients/${id}/assign_doctor`, { doctor_id: doctorId });
 export const assignNurse   = (id, nurseId)   => API.patch(`/patients/${id}/assign_nurse`,  { nurse_id: nurseId });
 
@@ -58,12 +60,14 @@ export const acknowledgeAlert  = (id, by)    => API.patch(`/alerts/${id}/acknowl
 // ── Doctors ───────────────────────────────────────────────
 export const getDoctors    = (params={})     => API.get('/doctors', { params });
 export const createDoctor  = (data)          => API.post('/doctors', data);
+export const updateDoctor  = (id, data)      => API.put(`/doctors/${id}`, data);
 export const deleteDoctor  = (id)            => API.delete(`/doctors/${id}`);
 export const getDoctorPatients = (id)        => API.get(`/doctors/${id}/patients`);
 
 // ── Nurses ────────────────────────────────────────────────
 export const getNurses     = (params={})     => API.get('/nurses', { params });
 export const createNurse   = (data)          => API.post('/nurses', data);
+export const updateNurse   = (id, data)      => API.put(`/nurses/${id}`, data);
 export const deleteNurse   = (id)            => API.delete(`/nurses/${id}`);
 export const getNursePatients  = (id)        => API.get(`/nurses/${id}/patients`);
 

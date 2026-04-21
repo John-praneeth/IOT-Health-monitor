@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getPatients, createPatient, deletePatient, getHospitals, getDoctors, getNurses, assignDoctor, assignNurse, getLatestVital } from '../api';
+import { getPatients, createPatient, updatePatient, deletePatient, getHospitals, getDoctors, getNurses, assignDoctor, assignNurse, getLatestVital } from '../api';
 import PatientChat from './PatientChat';
 
 const EMPTY_FORM = { name: '', age: '', room_number: '', hospital_id: '', assigned_doctor: '', assigned_nurse: '' };
@@ -16,6 +16,8 @@ export default function Patients() {
   const [chatPatient, setChatPatient] = useState(null);
   const [vitalsModal, setVitalsModal] = useState(null); // { patient, vitals }
   const [specFilter, setSpecFilter] = useState('');
+  const [editingPatient, setEditingPatient] = useState(null);
+  const [editForm, setEditForm] = useState(EMPTY_FORM);
 
   const role = localStorage.getItem('role');
   const canManage = role === 'ADMIN' || role === 'DOCTOR' || role === 'NURSE';
@@ -103,6 +105,38 @@ export default function Patients() {
       setVitalsModal({ patient, vitals: res.data });
     } catch {
       setVitalsModal({ patient, vitals: null });
+    }
+  };
+
+  const openEdit = (patient) => {
+    setEditingPatient(patient);
+    setEditForm({
+      name: patient.name || '',
+      age: String(patient.age ?? ''),
+      room_number: patient.room_number || '',
+      hospital_id: patient.hospital_id ? String(patient.hospital_id) : '',
+      assigned_doctor: patient.assigned_doctor ? String(patient.assigned_doctor) : '',
+      assigned_nurse: patient.assigned_nurse ? String(patient.assigned_nurse) : '',
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editingPatient) return;
+    setError('');
+    try {
+      await updatePatient(editingPatient.patient_id, {
+        name: editForm.name,
+        age: Number(editForm.age),
+        room_number: editForm.room_number,
+        hospital_id: editForm.hospital_id ? Number(editForm.hospital_id) : null,
+        assigned_doctor: editForm.assigned_doctor ? Number(editForm.assigned_doctor) : null,
+        assigned_nurse: editForm.assigned_nurse ? Number(editForm.assigned_nurse) : null,
+      });
+      setEditingPatient(null);
+      setEditForm(EMPTY_FORM);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to update patient');
     }
   };
 
@@ -242,6 +276,11 @@ export default function Patients() {
                       title="Open treatment chat">
                       💬 Chat
                     </button>
+                    {canManage && (
+                      <button className="btn btn-success btn-sm" onClick={() => openEdit(p)}>
+                        ✏️ Edit
+                      </button>
+                    )}
                     {canDelete && (
                       <button className="btn btn-danger btn-sm" onClick={() => handleDelete(p.patient_id)}>
                         🗑
@@ -304,6 +343,49 @@ export default function Patients() {
           patientName={chatPatient.name}
           onClose={() => setChatPatient(null)}
         />
+      )}
+
+      {editingPatient && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:999 }} onClick={() => setEditingPatient(null)}>
+          <div style={{ background:'#1e293b', borderRadius:16, padding:24, width:520, border:'1px solid #334155' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+              <h3 style={{ color:'#e2e8f0', margin:0 }}>✏️ Edit Patient</h3>
+              <button onClick={() => setEditingPatient(null)} style={{ background:'none', border:'none', color:'#94a3b8', fontSize:18, cursor:'pointer' }}>✕</button>
+            </div>
+            <div className="form-grid" style={{ padding:0 }}>
+              <div className="form-group"><label>Name</label><input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></div>
+              <div className="form-group"><label>Age</label><input type="number" value={editForm.age} onChange={e => setEditForm({ ...editForm, age: e.target.value })} /></div>
+              <div className="form-group"><label>Room</label><input value={editForm.room_number} onChange={e => setEditForm({ ...editForm, room_number: e.target.value })} /></div>
+              <div className="form-group">
+                <label>Hospital</label>
+                <select value={editForm.hospital_id} onChange={e => setEditForm({ ...editForm, hospital_id: e.target.value, assigned_doctor: '', assigned_nurse: '' })}>
+                  <option value="">— None —</option>
+                  {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Doctor</label>
+                <select value={editForm.assigned_doctor} onChange={e => setEditForm({ ...editForm, assigned_doctor: e.target.value })}>
+                  <option value="">— None —</option>
+                  {(editForm.hospital_id ? doctors.filter(d => String(d.hospital_id) === String(editForm.hospital_id) || d.is_freelancer) : doctors)
+                    .map(d => <option key={d.doctor_id} value={d.doctor_id}>{d.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Nurse</label>
+                <select value={editForm.assigned_nurse} onChange={e => setEditForm({ ...editForm, assigned_nurse: e.target.value })}>
+                  <option value="">— None —</option>
+                  {(editForm.hospital_id ? nurses.filter(n => String(n.hospital_id) === String(editForm.hospital_id)) : nurses)
+                    .map(n => <option key={n.nurse_id} value={n.nurse_id}>{n.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ display:'flex', gap:10, marginTop:12 }}>
+              <button className="btn btn-success" onClick={saveEdit}>Save Changes</button>
+              <button className="btn" style={{ background:'#334155', color:'#e2e8f0' }} onClick={() => setEditingPatient(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

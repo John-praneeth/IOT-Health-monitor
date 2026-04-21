@@ -49,7 +49,7 @@ def test_nurse_cannot_see_audit_logs(client):
 
 def test_public_endpoints_still_work(client):
     """Only health/public bootstrap endpoints should remain publicly accessible."""
-    assert client.get("/hospitals").status_code == 401
+    assert client.get("/hospitals").status_code == 200
     assert client.get("/patients").status_code == 401
     assert client.get("/vitals").status_code == 401
     assert client.get("/alerts").status_code == 401

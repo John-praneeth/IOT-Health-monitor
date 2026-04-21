@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getPatients, getAlerts, getDoctors, getDashboardStats, getMyNotifications, markAllNotificationsRead, markNotificationRead, getVitals } from '../api';
+import { getPatients, getAlerts, getDoctors, getDashboardStats, getMyNotifications, markAllNotificationsRead, markNotificationRead, getVitals, getVitalsSourceConfig } from '../api';
 import { buildVitalsWsUrl } from '../config';
 
 // Treat DB timestamps as UTC → convert to local time correctly
@@ -16,6 +16,8 @@ export default function Dashboard() {
   const [loading,       setLoading]       = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [showNotifs,    setShowNotifs]    = useState(false);
+  const [sourceConfig,  setSourceConfig]  = useState(null);
+  const role = (localStorage.getItem('role') || '').toUpperCase();
 
   const fetchAll = useCallback(async () => {
     try {
@@ -38,6 +40,15 @@ export default function Dashboard() {
         }
       });
       setLiveVitals(prev => ({ ...latestByPatient, ...prev }));
+
+      if (role === 'ADMIN') {
+        try {
+          const sourceRes = await getVitalsSourceConfig();
+          setSourceConfig(sourceRes.data);
+        } catch {
+          setSourceConfig(null);
+        }
+      }
 
       // Notifications require auth — fetch separately so a 401 doesn't break everything
       try {
@@ -224,7 +235,12 @@ export default function Dashboard() {
         </div>
         <div className="stat-card" style={{ background:'linear-gradient(135deg,#4c1d95,#6d28d9)' }}>
           <div className="label">Duplicate Vitals</div>
-          <div className="value">{stats?.duplicate_vitals_count ?? 0}</div>
+          <div className="value">
+            {sourceConfig?.source === 'fake' ? '—' : (stats?.duplicate_vitals_count ?? 0)}
+          </div>
+          {sourceConfig?.source === 'fake' && (
+            <div style={{ color:'#c4b5fd', fontSize:11 }}>N/A in fake source mode</div>
+          )}
         </div>
         <div className="stat-card" style={{ background:'linear-gradient(135deg,#065f46,#047857)' }}>
           <div className="label">Acknowledged</div>

@@ -421,6 +421,21 @@ def reset_password(
     return {"detail": f"Password reset successful for '{user.username}'"}
 
 
+@app.post("/auth/forgot-password", tags=["Auth"])
+def forgot_password(
+    body: schemas.ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """Self-service reset for demo deployments where email/OTP is not configured."""
+    user = auth.get_user_by_username(db, body.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.password_hash = auth.hash_password(body.new_password)
+    db.commit()
+    crud.write_audit(db, "FORGOT_PASSWORD_RESET", "user", entity_id=user.user_id, user_id=user.user_id)
+    return {"detail": f"Password reset successful for '{user.username}'"}
+
+
 @app.post("/auth/refresh", response_model=schemas.TokenResponse, tags=["Auth"])
 def refresh_auth_token(response: Response, request: Request, db: Session = Depends(get_db)):
     refresh_token = request.cookies.get(auth.REFRESH_COOKIE_NAME)
@@ -531,10 +546,8 @@ def logout(
 # ═══════════════════════════════════════════════════════════════════════════════
 @app.get("/hospitals", response_model=List[schemas.HospitalOut], tags=["Hospitals"])
 def list_hospitals(
-    current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    _ = current_user
     return crud.get_hospitals(db)
 
 
@@ -582,6 +595,23 @@ def get_doctor(
     db: Session = Depends(get_db),
 ):
     d = crud.get_doctor(db, doctor_id)
+    if not d:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+    return d
+
+
+@app.put("/doctors/{doctor_id}", response_model=schemas.DoctorOut, tags=["Doctors"])
+def update_doctor(
+    doctor_id: int,
+    payload: schemas.DoctorUpdate,
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
+    if current_user.role not in {"ADMIN", "DOCTOR"}:
+        raise HTTPException(status_code=403, detail="Not authorized to update doctor")
+    if current_user.role == "DOCTOR" and current_user.doctor_id != doctor_id:
+        raise HTTPException(status_code=403, detail="Not authorized to update doctor")
+    d = crud.update_doctor(db, doctor_id, payload, user_id=current_user.user_id)
     if not d:
         raise HTTPException(status_code=404, detail="Doctor not found")
     return d
@@ -653,6 +683,23 @@ def get_nurse(
     return n
 
 
+@app.put("/nurses/{nurse_id}", response_model=schemas.NurseOut, tags=["Nurses"])
+def update_nurse(
+    nurse_id: int,
+    payload: schemas.NurseUpdate,
+    current_user: models.User = Depends(auth.require_auth),
+    db: Session = Depends(get_db),
+):
+    if current_user.role not in {"ADMIN", "DOCTOR", "NURSE"}:
+        raise HTTPException(status_code=403, detail="Not authorized to update nurse")
+    if current_user.role == "NURSE" and current_user.nurse_id != nurse_id:
+        raise HTTPException(status_code=403, detail="Not authorized to update nurse")
+    n = crud.update_nurse(db, nurse_id, payload, user_id=current_user.user_id)
+    if not n:
+        raise HTTPException(status_code=404, detail="Nurse not found")
+    return n
+
+
 @app.delete("/nurses/{nurse_id}", tags=["Nurses"],
             summary="Delete nurse",
             description="Hard delete: permanently removes the nurse record from the database.")
@@ -696,8 +743,12 @@ def list_patients(
             raise HTTPException(status_code=403, detail="Not authorized to access these patients")
         if doctor_id and doctor_id != current_user.doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these patients")
-        doctor_id = current_user.doctor_id
-        nurse_id = None
+        if doctor_id == current_user.doctor_id:
+            patients = crud.get_patients(db, doctor_id=current_user.doctor_id)
+        else:
+            allowed_ids = _allowed_patient_ids_for_user(db, current_user)
+            patients = crud.get_patients(db, patient_ids=list(allowed_ids or []))
+        return filter_response_by_role(current_user, patients)
     elif current_user.role == "NURSE":
         if not current_user.nurse_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these patients")
@@ -705,9 +756,31 @@ def list_patients(
             raise HTTPException(status_code=403, detail="Not authorized to access these patients")
         if doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these patients")
-        nurse_id = current_user.nurse_id
+        if nurse_id == current_user.nurse_id:
+            patients = crud.get_patients(db, nurse_id=current_user.nurse_id)
+        else:
+            allowed_ids = _allowed_patient_ids_for_user(db, current_user)
+            patients = crud.get_patients(db, patient_ids=list(allowed_ids or []))
+        return filter_response_by_role(current_user, patients)
     patients = crud.get_patients(db, doctor_id=doctor_id, nurse_id=nurse_id)
     return filter_response_by_role(current_user, patients)
+
+
+@app.put("/patients/{patient_id}", response_model=schemas.PatientOut, tags=["Patients"])
+def update_patient(
+    patient_id: int,
+    payload: schemas.PatientUpdate,
+    current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR", "NURSE")),
+    db: Session = Depends(get_db),
+):
+    existing = crud.get_patient(db, patient_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    check_patient_access(db, current_user, existing)
+    updated = crud.update_patient(db, patient_id, payload, user_id=current_user.user_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return updated
 
 
 @app.post("/patients", response_model=schemas.PatientOut, tags=["Patients"])
@@ -814,14 +887,16 @@ def get_vitals(
             raise HTTPException(status_code=403, detail="Not authorized to access these vitals")
         if doctor_id and doctor_id != current_user.doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these vitals")
-        vitals = crud.get_vitals(db, doctor_id=current_user.doctor_id, limit=limit, offset=offset)
+        allowed_ids = _allowed_patient_ids_for_user(db, current_user)
+        vitals = crud.get_vitals(db, patient_ids=list(allowed_ids or []), limit=limit, offset=offset)
         return filter_response_by_role(current_user, vitals)
     if current_user.role == "NURSE":
         if not current_user.nurse_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these vitals")
         if doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these vitals")
-        vitals = crud.get_vitals(db, nurse_id=current_user.nurse_id, limit=limit, offset=offset)
+        allowed_ids = _allowed_patient_ids_for_user(db, current_user)
+        vitals = crud.get_vitals(db, patient_ids=list(allowed_ids or []), limit=limit, offset=offset)
         return filter_response_by_role(current_user, vitals)
     raise HTTPException(status_code=403, detail="Not authorized to access these vitals")
 
@@ -862,26 +937,16 @@ def get_alerts(
             raise HTTPException(status_code=403, detail="Not authorized to access these alerts")
         if doctor_id and doctor_id != current_user.doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these alerts")
-        return crud.get_alerts(
-            db,
-            status=status,
-            doctor_id=current_user.doctor_id,
-            limit=limit,
-            offset=offset,
-        )
+        allowed_ids = _allowed_patient_ids_for_user(db, current_user)
+        return crud.get_alerts(db, status=status, patient_ids=list(allowed_ids or []), limit=limit, offset=offset)
 
     if current_user.role == "NURSE":
         if not current_user.nurse_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these alerts")
         if doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these alerts")
-        return crud.get_alerts(
-            db,
-            status=status,
-            nurse_id=current_user.nurse_id,
-            limit=limit,
-            offset=offset,
-        )
+        allowed_ids = _allowed_patient_ids_for_user(db, current_user)
+        return crud.get_alerts(db, status=status, patient_ids=list(allowed_ids or []), limit=limit, offset=offset)
 
     raise HTTPException(status_code=403, detail="Not authorized to access these alerts")
 
@@ -1032,11 +1097,19 @@ def _allowed_patient_ids_for_user(db: Session, user: models.User) -> Optional[se
     if user.role == "NURSE":
         if not user.nurse_id:
             return set()
-        return {
+        ids = {
             row[0] for row in db.query(models.Patient.patient_id).filter(
                 models.Patient.assigned_nurse == user.nurse_id
             ).all()
         }
+        nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == user.nurse_id).first()
+        if nurse and nurse.hospital_id:
+            ids.update(
+                row[0] for row in db.query(models.Patient.patient_id).filter(
+                    models.Patient.hospital_id == nurse.hospital_id
+                ).all()
+            )
+        return ids
 
     return set()
 

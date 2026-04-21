@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { login, registerDoctor, registerNurse, getHospitals } from '../api';
+import { login, registerDoctor, registerNurse, getHospitals, forgotPassword } from '../api';
 
 const COUNTRY_CODES = [
   { code: '91',  label: '🇮🇳 +91' },
@@ -36,10 +36,16 @@ export default function Login({ onLogin }) {
   const [hospitals, setHospitals] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
   const [doctorCountryCode, setDoctorCountryCode] = useState('91');
   const [nurseCountryCode, setNurseCountryCode] = useState('91');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showDoctorPassword, setShowDoctorPassword] = useState(false);
+  const [showNursePassword, setShowNursePassword] = useState(false);
+  const [showReset, setShowReset] = useState(false);
 
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [resetForm, setResetForm] = useState({ username: '', new_password: '', confirm_password: '' });
 
   const [doctorForm, setDoctorForm] = useState({
     username: '', password: '', name: '', specialization: 'Cardiology',
@@ -102,6 +108,31 @@ export default function Login({ onLogin }) {
 
   const switchTab = (t) => { setTab(t); setError(''); };
 
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setError('');
+    setResetMsg('');
+    if (resetForm.new_password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    if (resetForm.new_password !== resetForm.confirm_password) {
+      setError('Passwords do not match');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await forgotPassword({ username: resetForm.username, new_password: resetForm.new_password });
+      setResetMsg(res?.data?.detail || 'Password reset successful. Please sign in.');
+      setShowReset(false);
+      setLoginForm((prev) => ({ ...prev, username: resetForm.username, password: '' }));
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Password reset failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -143,23 +174,64 @@ export default function Login({ onLogin }) {
           }}>⚠️ {error}</div>
         )}
 
+        {resetMsg && (
+          <div style={{
+            background: '#14532d', color: '#86efac', borderRadius: 8,
+            padding: '9px 12px', fontSize: 13, marginBottom: 14,
+          }}>✅ {resetMsg}</div>
+        )}
+
         {/* ── Sign In ── */}
         {tab === 'login' && (
-          <form onSubmit={handleLogin}>
+          <form onSubmit={showReset ? handleResetPassword : handleLogin}>
             <label style={labelStyle}>Username</label>
-            <input placeholder="Enter your username" value={loginForm.username}
-              onChange={e => setLoginForm({ ...loginForm, username: e.target.value })}
-              required autoFocus style={inputStyle} />
-            <label style={labelStyle}>Password</label>
-            <input type="password" placeholder="Enter your password" value={loginForm.password}
-              onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
-              required style={inputStyle} />
-            <button type="submit" disabled={loading} style={btnStyle}>
-              {loading ? 'Signing in…' : '🔑 Sign In'}
-            </button>
-            <p style={{ color: '#64748b', fontSize: 12, marginTop: 10, marginBottom: 0 }}>
-              Forgot credentials? Contact your admin to reset your password from the Admin API.
-            </p>
+            {showReset ? (
+              <>
+                <input placeholder="Enter your username" value={resetForm.username}
+                  onChange={e => setResetForm({ ...resetForm, username: e.target.value })}
+                  required autoFocus style={inputStyle} />
+                <label style={labelStyle}>New Password</label>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <input type={showLoginPassword ? 'text' : 'password'} placeholder="Enter new password" value={resetForm.new_password}
+                    onChange={e => setResetForm({ ...resetForm, new_password: e.target.value })}
+                    required style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
+                  <button type="button" onClick={() => setShowLoginPassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 86, padding: '10px 8px' }}>
+                    {showLoginPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <label style={labelStyle}>Confirm Password</label>
+                <input type={showLoginPassword ? 'text' : 'password'} placeholder="Confirm password" value={resetForm.confirm_password}
+                  onChange={e => setResetForm({ ...resetForm, confirm_password: e.target.value })}
+                  required style={inputStyle} />
+                <button type="submit" disabled={loading} style={btnStyle}>
+                  {loading ? 'Resetting…' : '🔁 Reset Password'}
+                </button>
+                <button type="button" onClick={() => { setShowReset(false); setError(''); }} style={{ ...btnStyle, marginTop: 8, background: '#334155' }}>
+                  Back to Sign In
+                </button>
+              </>
+            ) : (
+              <>
+                <input placeholder="Enter your username" value={loginForm.username}
+                  onChange={e => setLoginForm({ ...loginForm, username: e.target.value })}
+                  required autoFocus style={inputStyle} />
+                <label style={labelStyle}>Password</label>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <input type={showLoginPassword ? 'text' : 'password'} placeholder="Enter your password" value={loginForm.password}
+                    onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
+                    required style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
+                  <button type="button" onClick={() => setShowLoginPassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 86, padding: '10px 8px' }}>
+                    {showLoginPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <button type="submit" disabled={loading} style={btnStyle}>
+                  {loading ? 'Signing in…' : '🔑 Sign In'}
+                </button>
+                <button type="button" onClick={() => { setShowReset(true); setError(''); setResetMsg(''); setResetForm({ username: loginForm.username || '', new_password: '', confirm_password: '' }); }} style={{ ...btnStyle, marginTop: 8, background: '#334155' }}>
+                  Forgot password? Reset here
+                </button>
+              </>
+            )}
           </form>
         )}
 
@@ -176,9 +248,14 @@ export default function Login({ onLogin }) {
               </div>
               <div>
                 <label style={labelStyle}>Password</label>
-                <input type="password" placeholder="Password" value={doctorForm.password}
-                  onChange={e => setDoctorForm({ ...doctorForm, password: e.target.value })}
-                  required style={{ ...inputStyle, marginBottom: 0 }} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input type={showDoctorPassword ? 'text' : 'password'} placeholder="Password" value={doctorForm.password}
+                    onChange={e => setDoctorForm({ ...doctorForm, password: e.target.value })}
+                    required style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
+                  <button type="button" onClick={() => setShowDoctorPassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 78, padding: '10px 8px' }}>
+                    {showDoctorPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
             </div>
             <div style={{ height: 10 }} />
@@ -238,9 +315,14 @@ export default function Login({ onLogin }) {
               </div>
               <div>
                 <label style={labelStyle}>Password</label>
-                <input type="password" placeholder="Password" value={nurseForm.password}
-                  onChange={e => setNurseForm({ ...nurseForm, password: e.target.value })}
-                  required style={{ ...inputStyle, marginBottom: 0 }} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input type={showNursePassword ? 'text' : 'password'} placeholder="Password" value={nurseForm.password}
+                    onChange={e => setNurseForm({ ...nurseForm, password: e.target.value })}
+                    required style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
+                  <button type="button" onClick={() => setShowNursePassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 78, padding: '10px 8px' }}>
+                    {showNursePassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
             </div>
             <div style={{ height: 10 }} />
