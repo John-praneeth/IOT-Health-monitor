@@ -37,7 +37,8 @@ export const registerNurse    = (data) => API.post('/auth/register/nurse', data)
 export const login            = (data) => API.post('/auth/login', data);
 export const getMe            = ()     => API.get('/auth/me');
 export const resetPassword    = (data) => API.post('/auth/reset-password', data);
-export const forgotPassword   = (data) => API.post('/auth/forgot-password', data);
+export const forgotPasswordRequest = (data) => API.post('/auth/forgot-password/request', data);
+export const forgotPasswordConfirm = (data) => API.post('/auth/forgot-password/confirm', data);
 
 // ── Patients ──────────────────────────────────────────────
 export const getPatients   = (params={})     => API.get('/patients', { params });

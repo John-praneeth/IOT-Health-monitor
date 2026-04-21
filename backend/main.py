@@ -6,9 +6,10 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Depends, Request, Response, WebSocket, WebSocketDisconnect
@@ -95,6 +96,7 @@ WS_BROADCAST_MODE = os.getenv("WS_BROADCAST_MODE", "event")  # "event" (incremen
 WS_REDIS_CHANNEL = "iot:vitals"
 ALLOW_ADMIN_ALERT_ACK = os.getenv("ALLOW_ADMIN_ALERT_ACK", "false").lower() in ("1", "true", "yes")
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+FORGOT_PASSWORD_CODE_TTL_MINUTES = int(os.getenv("FORGOT_PASSWORD_CODE_TTL_MINUTES", "10"))
 
 # ── Basic Prometheus-compatible metrics (no external dependency) ─────────────
 APP_STARTED_AT = time.time()
@@ -455,15 +457,96 @@ def reset_password(
     return {"detail": f"Password reset successful for '{user.username}'"}
 
 
-@app.post("/auth/forgot-password", tags=["Auth"])
-def forgot_password(
-    body: schemas.ForgotPasswordRequest,
+def _password_reset_phone_for_user(db: Session, user: models.User) -> Optional[str]:
+    phone = None
+    if user.doctor_id:
+        doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == user.doctor_id).first()
+        if doctor and doctor.phone:
+            phone = doctor.phone
+    elif user.nurse_id:
+        nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == user.nurse_id).first()
+        if nurse and nurse.phone:
+            phone = nurse.phone
+    if not phone:
+        return None
+    return phone.strip().lstrip("+")
+
+
+@app.post("/auth/forgot-password/request", tags=["Auth"])
+def forgot_password_request(
+    body: schemas.ForgotPasswordStartRequest,
     db: Session = Depends(get_db),
 ):
-    """Self-service reset for demo deployments where email/OTP is not configured."""
+    """Request a one-time password reset code delivered via configured channel."""
+    response_payload = {
+        "detail": "If the account exists, a verification code has been sent.",
+        "delivery": "unavailable",
+    }
     user = auth.get_user_by_username(db, body.username)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        return response_payload
+
+    db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.user_id == user.user_id,
+        models.PasswordResetToken.used == False,
+    ).update({"used": True})
+
+    verification_code = f"{secrets.randbelow(1000000):06d}"
+    reset_token = models.PasswordResetToken(
+        user_id=user.user_id,
+        code_hash=auth.hash_password(verification_code),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=FORGOT_PASSWORD_CODE_TTL_MINUTES),
+        used=False,
+    )
+    db.add(reset_token)
+    db.commit()
+
+    target_phone = _password_reset_phone_for_user(db, user)
+    if target_phone and whatsapp_notifier.WHATSAPP_ENABLED:
+        sent = whatsapp_notifier.send_whatsapp_message(
+            target_phone,
+            (
+                "🔐 *Password Reset Code*\n"
+                f"Your verification code is: *{verification_code}*\n"
+                f"It expires in {FORGOT_PASSWORD_CODE_TTL_MINUTES} minutes."
+            ),
+            retries=2,
+            event_type="RESET",
+        )
+        if sent:
+            response_payload["delivery"] = "whatsapp"
+
+    if os.getenv("ENVIRONMENT", "development").lower() != "production":
+        response_payload["verification_code"] = verification_code
+
+    return response_payload
+
+
+@app.post("/auth/forgot-password/confirm", tags=["Auth"])
+@app.post("/auth/forgot-password", tags=["Auth"])
+def forgot_password_confirm(
+    body: schemas.ForgotPasswordConfirmRequest,
+    db: Session = Depends(get_db),
+):
+    user = auth.get_user_by_username(db, body.username)
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+
+    now = datetime.now(timezone.utc)
+    token_row = (
+        db.query(models.PasswordResetToken)
+        .filter(
+            models.PasswordResetToken.user_id == user.user_id,
+            models.PasswordResetToken.used == False,
+            models.PasswordResetToken.expires_at > now,
+        )
+        .order_by(models.PasswordResetToken.created_at.desc())
+        .first()
+    )
+    if not token_row or not auth.verify_password(body.verification_code, token_row.code_hash):
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+
+    token_row.used = True
     user.password_hash = auth.hash_password(body.new_password)
     db.commit()
     crud.write_audit(db, "FORGOT_PASSWORD_RESET", "user", entity_id=user.user_id, user_id=user.user_id)

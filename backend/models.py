@@ -232,3 +232,20 @@ class AppSetting(Base):
 
     setting_key = Column(String(100), primary_key=True, index=True)
     setting_value = Column(String(2000), nullable=True)
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    token_id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False, index=True)
+    code_hash = Column(String(255), nullable=False)
+    expires_at = Column(TIMESTAMP, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+    user = relationship("User")
+
+    __table_args__ = (
+        Index("idx_reset_token_user_used", "user_id", "used"),
+    )

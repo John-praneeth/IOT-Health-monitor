@@ -206,8 +206,13 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=6, max_length=200)
 
 
-class ForgotPasswordRequest(BaseModel):
+class ForgotPasswordStartRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=100)
+
+
+class ForgotPasswordConfirmRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+    verification_code: str = Field(..., min_length=4, max_length=20)
     new_password: str = Field(..., min_length=6, max_length=200)
 
 

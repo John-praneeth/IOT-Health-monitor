@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { login, registerDoctor, registerNurse, getHospitals, forgotPassword } from '../api';
+import { login, registerDoctor, registerNurse, getHospitals, forgotPasswordRequest, forgotPasswordConfirm } from '../api';
 
 const COUNTRY_CODES = [
   { code: '91',  label: '🇮🇳 +91' },
@@ -43,9 +43,10 @@ export default function Login({ onLogin }) {
   const [showDoctorPassword, setShowDoctorPassword] = useState(false);
   const [showNursePassword, setShowNursePassword] = useState(false);
   const [showReset, setShowReset] = useState(false);
+  const [resetStep, setResetStep] = useState('request');
 
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [resetForm, setResetForm] = useState({ username: '', new_password: '', confirm_password: '' });
+  const [resetForm, setResetForm] = useState({ username: '', verification_code: '', new_password: '', confirm_password: '' });
 
   const [doctorForm, setDoctorForm] = useState({
     username: '', password: '', name: '', specialization: 'Cardiology',
@@ -108,10 +109,35 @@ export default function Login({ onLogin }) {
 
   const switchTab = (t) => { setTab(t); setError(''); };
 
-  const handleResetPassword = async (e) => {
+  const handleResetRequest = async (e) => {
     e.preventDefault();
     setError('');
     setResetMsg('');
+    if (!resetForm.username.trim()) {
+      setError('Username is required');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await forgotPasswordRequest({ username: resetForm.username.trim() });
+      const codeHint = res?.data?.verification_code ? ` Code: ${res.data.verification_code}` : '';
+      setResetMsg((res?.data?.detail || 'Verification code sent if account exists.') + codeHint);
+      setResetStep('confirm');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not send verification code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetConfirm = async (e) => {
+    e.preventDefault();
+    setError('');
+    setResetMsg('');
+    if (!resetForm.verification_code.trim()) {
+      setError('Verification code is required');
+      return;
+    }
     if (resetForm.new_password.length < 6) {
       setError('Password must be at least 6 characters');
       return;
@@ -122,10 +148,16 @@ export default function Login({ onLogin }) {
     }
     setLoading(true);
     try {
-      const res = await forgotPassword({ username: resetForm.username, new_password: resetForm.new_password });
+      const res = await forgotPasswordConfirm({
+        username: resetForm.username.trim(),
+        verification_code: resetForm.verification_code.trim(),
+        new_password: resetForm.new_password,
+      });
       setResetMsg(res?.data?.detail || 'Password reset successful. Please sign in.');
       setShowReset(false);
+      setResetStep('request');
       setLoginForm((prev) => ({ ...prev, username: resetForm.username, password: '' }));
+      setResetForm({ username: '', verification_code: '', new_password: '', confirm_password: '' });
     } catch (err) {
       setError(err.response?.data?.detail || 'Password reset failed');
     } finally {
@@ -183,30 +215,55 @@ export default function Login({ onLogin }) {
 
         {/* ── Sign In ── */}
         {tab === 'login' && (
-          <form onSubmit={showReset ? handleResetPassword : handleLogin}>
+          <form onSubmit={showReset ? (resetStep === 'request' ? handleResetRequest : handleResetConfirm) : handleLogin}>
             <label style={labelStyle}>Username</label>
             {showReset ? (
               <>
                 <input placeholder="Enter your username" value={resetForm.username}
                   onChange={e => setResetForm({ ...resetForm, username: e.target.value })}
                   required autoFocus style={inputStyle} />
-                <label style={labelStyle}>New Password</label>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                  <input type={showLoginPassword ? 'text' : 'password'} placeholder="Enter new password" value={resetForm.new_password}
-                    onChange={e => setResetForm({ ...resetForm, new_password: e.target.value })}
-                    required style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
-                  <button type="button" onClick={() => setShowLoginPassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 86, padding: '10px 8px' }}>
-                    {showLoginPassword ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-                <label style={labelStyle}>Confirm Password</label>
-                <input type={showLoginPassword ? 'text' : 'password'} placeholder="Confirm password" value={resetForm.confirm_password}
-                  onChange={e => setResetForm({ ...resetForm, confirm_password: e.target.value })}
-                  required style={inputStyle} />
+                {resetStep === 'confirm' && (
+                  <>
+                    <label style={labelStyle}>Verification Code</label>
+                    <input placeholder="Enter verification code" value={resetForm.verification_code}
+                      onChange={e => setResetForm({ ...resetForm, verification_code: e.target.value })}
+                      required style={inputStyle} />
+                    <label style={labelStyle}>New Password</label>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                      <input type={showLoginPassword ? 'text' : 'password'} placeholder="Enter new password" value={resetForm.new_password}
+                        onChange={e => setResetForm({ ...resetForm, new_password: e.target.value })}
+                        required style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
+                      <button type="button" onClick={() => setShowLoginPassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 86, padding: '10px 8px' }}>
+                        {showLoginPassword ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                    <label style={labelStyle}>Confirm Password</label>
+                    <input type={showLoginPassword ? 'text' : 'password'} placeholder="Confirm password" value={resetForm.confirm_password}
+                      onChange={e => setResetForm({ ...resetForm, confirm_password: e.target.value })}
+                      required style={inputStyle} />
+                  </>
+                )}
                 <button type="submit" disabled={loading} style={btnStyle}>
-                  {loading ? 'Resetting…' : '🔁 Reset Password'}
+                  {loading
+                    ? (resetStep === 'request' ? 'Sending…' : 'Resetting…')
+                    : (resetStep === 'request' ? '📨 Send Verification Code' : '🔁 Reset Password')}
                 </button>
-                <button type="button" onClick={() => { setShowReset(false); setError(''); }} style={{ ...btnStyle, marginTop: 8, background: '#334155' }}>
+                {resetStep === 'confirm' && (
+                  <button type="button" onClick={() => setResetStep('request')} style={{ ...btnStyle, marginTop: 8, background: '#334155' }}>
+                    Resend Code
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReset(false);
+                    setResetStep('request');
+                    setError('');
+                    setResetMsg('');
+                    setResetForm({ username: '', verification_code: '', new_password: '', confirm_password: '' });
+                  }}
+                  style={{ ...btnStyle, marginTop: 8, background: '#334155' }}
+                >
                   Back to Sign In
                 </button>
               </>
@@ -227,7 +284,17 @@ export default function Login({ onLogin }) {
                 <button type="submit" disabled={loading} style={btnStyle}>
                   {loading ? 'Signing in…' : '🔑 Sign In'}
                 </button>
-                <button type="button" onClick={() => { setShowReset(true); setError(''); setResetMsg(''); setResetForm({ username: loginForm.username || '', new_password: '', confirm_password: '' }); }} style={{ ...btnStyle, marginTop: 8, background: '#334155' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReset(true);
+                    setResetStep('request');
+                    setError('');
+                    setResetMsg('');
+                    setResetForm({ username: loginForm.username || '', verification_code: '', new_password: '', confirm_password: '' });
+                  }}
+                  style={{ ...btnStyle, marginTop: 8, background: '#334155' }}
+                >
                   Forgot password? Reset here
                 </button>
               </>

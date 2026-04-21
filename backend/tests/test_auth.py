@@ -76,3 +76,37 @@ def test_invalid_login(client):
 def test_protected_endpoint_without_token(client):
     resp = client.get("/audit-logs")
     assert resp.status_code == 401
+
+
+def test_forgot_password_two_step_flow(client):
+    register = client.post(
+        "/auth/register",
+        json={
+            "username": "reset_user",
+            "password": "oldpass123",
+            "role": "DOCTOR",
+        },
+        headers=_admin_headers(client),
+    )
+    assert register.status_code == 200
+
+    start = client.post("/auth/forgot-password/request", json={"username": "reset_user"})
+    assert start.status_code == 200
+    code = start.json().get("verification_code")
+    assert code
+
+    confirm = client.post(
+        "/auth/forgot-password/confirm",
+        json={
+            "username": "reset_user",
+            "verification_code": code,
+            "new_password": "newpass123",
+        },
+    )
+    assert confirm.status_code == 200
+
+    old_login = client.post("/auth/login", json={"username": "reset_user", "password": "oldpass123"})
+    assert old_login.status_code == 401
+
+    new_login = client.post("/auth/login", json={"username": "reset_user", "password": "newpass123"})
+    assert new_login.status_code == 200
