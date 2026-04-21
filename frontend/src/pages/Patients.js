@@ -20,7 +20,10 @@ export default function Patients() {
   const [editForm, setEditForm] = useState(EMPTY_FORM);
 
   const role = localStorage.getItem('role');
-  const canManage = role === 'ADMIN' || role === 'DOCTOR' || role === 'NURSE';
+  const canCreate = role === 'ADMIN' || role === 'DOCTOR';
+  const canEdit = role === 'ADMIN' || role === 'DOCTOR' || role === 'NURSE';
+  const canAssignDoctor = role === 'ADMIN' || role === 'DOCTOR';
+  const canAssignNurse = role === 'ADMIN' || role === 'DOCTOR' || role === 'NURSE';
   const canDelete = role === 'ADMIN' || role === 'DOCTOR';
 
   const load = async () => {
@@ -150,7 +153,7 @@ export default function Patients() {
       {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
 
       <div style={{ marginBottom: 16, display:'flex', gap:10, flexWrap:'wrap' }}>
-        {canManage && (
+        {canCreate && (
           <button className="btn btn-primary" onClick={() => setShowAdd(!showAdd)}>
             {showAdd ? '✕ Cancel' : '+ Add Patient'}
           </button>
@@ -158,7 +161,7 @@ export default function Patients() {
       </div>
 
       {/* Add Patient Form */}
-      {canManage && showAdd && (
+      {canCreate && showAdd && (
         <div className="card" style={{ marginBottom: 24 }}>
           <div className="card-header"><h2>New Patient</h2></div>
           <form onSubmit={handleSubmit}>
@@ -231,7 +234,7 @@ export default function Patients() {
             </thead>
             <tbody>
               {patients.length === 0 && (
-                <tr><td colSpan={8} className="empty-state">No patients yet. Add one above.</td></tr>
+                <tr><td colSpan={8} className="empty-state">No patients found.</td></tr>
               )}
               {patients.map(p => (
                 <tr key={p.patient_id}>
@@ -241,7 +244,7 @@ export default function Patients() {
                   <td>{p.room_number}</td>
                   <td>{p.hospital_name || '—'}</td>
                   <td>
-                    {canManage ? (
+                    {canAssignDoctor ? (
                       <select className="inline-select" value={p.assigned_doctor || ''}
                         onChange={e => handleAssignDoctor(p.patient_id, e.target.value)}>
                         <option value="">— None —</option>
@@ -256,7 +259,7 @@ export default function Patients() {
                     )}
                   </td>
                   <td>
-                    {canManage ? (
+                    {canAssignNurse ? (
                       <select className="inline-select" value={p.assigned_nurse || ''}
                         onChange={e => handleAssignNurse(p.patient_id, e.target.value)}>
                         <option value="">— None —</option>
@@ -276,7 +279,7 @@ export default function Patients() {
                       title="Open treatment chat">
                       💬 Chat
                     </button>
-                    {canManage && (
+                    {canEdit && (
                       <button className="btn btn-success btn-sm" onClick={() => openEdit(p)}>
                         ✏️ Edit
                       </button>

@@ -144,6 +144,41 @@ def test_patient_access_control(client):
     assert allowed.status_code == 200
 
 
+def test_nurse_cannot_create_patient(client):
+    admin = _admin_headers(client)
+    doctor = _create_doctor_user(client, admin, "doc_for_nurse_create", "919900000014")
+    nurse = _create_nurse_user(client, admin, "nurse_no_create", "919900000015")
+
+    resp = client.post(
+        "/patients",
+        json={
+            "name": "Blocked Patient",
+            "age": 40,
+            "room_number": "X-1",
+            "assigned_doctor": doctor["doctor_id"],
+            "assigned_nurse": nurse["nurse_id"],
+        },
+        headers=nurse["headers"],
+    )
+    assert resp.status_code == 403
+
+
+def test_doctor_cannot_assign_outside_scope(client):
+    admin = _admin_headers(client)
+    owner = _create_doctor_user(client, admin, "doc_assign_owner", "919900000016")
+    other = _create_doctor_user(client, admin, "doc_assign_other", "919900000017")
+    nurse = _create_nurse_user(client, admin, "nurse_assign_target", "919900000018")
+
+    patient_id = _create_patient(client, admin, owner["doctor_id"])
+
+    resp = client.patch(
+        f"/patients/{patient_id}/assign_nurse",
+        json={"nurse_id": nurse["nurse_id"]},
+        headers=other["headers"],
+    )
+    assert resp.status_code == 403
+
+
 def test_chat_access_control(client):
     admin = _admin_headers(client)
     assigned = _create_doctor_user(client, admin, "doc_chat_owner", "919900000008")

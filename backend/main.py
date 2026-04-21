@@ -786,10 +786,13 @@ def update_patient(
 @app.post("/patients", response_model=schemas.PatientOut, tags=["Patients"])
 def create_patient(
     patient: schemas.PatientCreate,
-    current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR", "NURSE")),
+    current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR")),
     db: Session = Depends(get_db),
 ):
-    return crud.create_patient(db, patient, user_id=current_user.user_id)
+    try:
+        return crud.create_patient(db, patient, user_id=current_user.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/patients/{patient_id}", response_model=schemas.PatientOut, tags=["Patients"])
@@ -830,7 +833,14 @@ def assign_doctor(
     current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR")),
     db: Session = Depends(get_db),
 ):
-    p = crud.assign_doctor(db, patient_id, body.doctor_id)
+    existing = crud.get_patient(db, patient_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    check_patient_access(db, current_user, existing)
+    try:
+        p = crud.assign_doctor(db, patient_id, body.doctor_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not p:
         raise HTTPException(status_code=404, detail="Patient or Doctor not found")
     return p
@@ -843,7 +853,14 @@ def assign_nurse(
     current_user: models.User = Depends(auth.require_role("ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
-    p = crud.assign_nurse(db, patient_id, body.nurse_id)
+    existing = crud.get_patient(db, patient_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    check_patient_access(db, current_user, existing)
+    try:
+        p = crud.assign_nurse(db, patient_id, body.nurse_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not p:
         raise HTTPException(status_code=404, detail="Patient or Nurse not found")
     return p

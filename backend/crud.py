@@ -458,7 +458,49 @@ def get_patient(db: Session, patient_id: int):
     return _enrich_patient(p) if p else None
 
 
+def _validate_patient_links(
+    db: Session,
+    hospital_id: int | None,
+    assigned_doctor: int | None,
+    assigned_nurse: int | None,
+):
+    if hospital_id is not None:
+        hospital = db.query(models.Hospital).filter(models.Hospital.hospital_id == hospital_id).first()
+        if not hospital:
+            raise ValueError("Hospital not found")
+
+    doctor = None
+    if assigned_doctor is not None:
+        doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == assigned_doctor).first()
+        if not doctor:
+            raise ValueError("Doctor not found")
+
+    nurse = None
+    if assigned_nurse is not None:
+        nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == assigned_nurse).first()
+        if not nurse:
+            raise ValueError("Nurse not found")
+
+    if doctor and not doctor.is_freelancer and doctor.hospital_id is not None:
+        if hospital_id is None:
+            raise ValueError("Patient hospital is required for a hospital-based doctor")
+        if doctor.hospital_id != hospital_id:
+            raise ValueError("Assigned doctor does not belong to the patient's hospital")
+
+    if nurse and nurse.hospital_id is not None:
+        if hospital_id is None:
+            raise ValueError("Patient hospital is required when assigning a nurse")
+        if nurse.hospital_id != hospital_id:
+            raise ValueError("Assigned nurse does not belong to the patient's hospital")
+
+
 def create_patient(db: Session, patient: schemas.PatientCreate, user_id: int):
+    _validate_patient_links(
+        db,
+        hospital_id=patient.hospital_id,
+        assigned_doctor=patient.assigned_doctor,
+        assigned_nurse=patient.assigned_nurse,
+    )
     db_patient = models.Patient(**patient.model_dump())
     db.add(db_patient)
     db.commit()
@@ -471,6 +513,12 @@ def update_patient(db: Session, patient_id: int, payload: schemas.PatientUpdate,
     patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
     if not patient:
         return None
+    _validate_patient_links(
+        db,
+        hospital_id=payload.hospital_id,
+        assigned_doctor=payload.assigned_doctor,
+        assigned_nurse=payload.assigned_nurse,
+    )
     for field, value in payload.model_dump().items():
         setattr(patient, field, value)
     db.commit()
@@ -526,6 +574,12 @@ def assign_doctor(db: Session, patient_id: int, doctor_id: int | None):
         return None
     if doctor_id is None:
         patient.assigned_doctor = None
+        _validate_patient_links(
+            db,
+            hospital_id=patient.hospital_id,
+            assigned_doctor=None,
+            assigned_nurse=patient.assigned_nurse,
+        )
         db.commit()
         db.refresh(patient)
         return _enrich_patient(patient)
@@ -533,6 +587,12 @@ def assign_doctor(db: Session, patient_id: int, doctor_id: int | None):
     if not doctor:
         return None
     patient.assigned_doctor = doctor_id
+    _validate_patient_links(
+        db,
+        hospital_id=patient.hospital_id,
+        assigned_doctor=doctor_id,
+        assigned_nurse=patient.assigned_nurse,
+    )
     db.commit()
     db.refresh(patient)
     return _enrich_patient(patient)
@@ -544,6 +604,12 @@ def assign_nurse(db: Session, patient_id: int, nurse_id: int | None):
         return None
     if nurse_id is None:
         patient.assigned_nurse = None
+        _validate_patient_links(
+            db,
+            hospital_id=patient.hospital_id,
+            assigned_doctor=patient.assigned_doctor,
+            assigned_nurse=None,
+        )
         db.commit()
         db.refresh(patient)
         return _enrich_patient(patient)
@@ -551,6 +617,12 @@ def assign_nurse(db: Session, patient_id: int, nurse_id: int | None):
     if not nurse:
         return None
     patient.assigned_nurse = nurse_id
+    _validate_patient_links(
+        db,
+        hospital_id=patient.hospital_id,
+        assigned_doctor=patient.assigned_doctor,
+        assigned_nurse=nurse_id,
+    )
     db.commit()
     db.refresh(patient)
     return _enrich_patient(patient)
