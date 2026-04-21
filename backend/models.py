@@ -74,13 +74,16 @@ class Vitals(Base):
     heart_rate     = Column(Integer)
     spo2           = Column(Integer)
     temperature    = Column(Float)
+    source         = Column(String(20), nullable=False, default="fake", server_default="fake")
     timestamp      = Column(TIMESTAMP, server_default=func.now())
 
     __table_args__ = (
         Index("idx_vitals_patient_ts", "patient_id", timestamp.desc()),
+        Index("idx_vitals_source", "source"),
         CheckConstraint("heart_rate BETWEEN 30 AND 220", name="ck_vitals_heart_rate_range"),
         CheckConstraint("spo2 BETWEEN 70 AND 100", name="ck_vitals_spo2_range"),
         CheckConstraint("temperature BETWEEN 85 AND 110", name="ck_vitals_temperature_range"),
+        CheckConstraint("source IN ('fake','thingspeak')", name="ck_vitals_source"),
     )
 
 
@@ -91,6 +94,7 @@ class Alert(Base):
     patient_id      = Column(Integer, ForeignKey("patients.patient_id"))
     vital_id        = Column(Integer, ForeignKey("vitals.vital_id"))
     alert_type      = Column(String(50))
+    source          = Column(String(20), nullable=False, default="fake", server_default="fake")
     status          = Column(String(20), default="PENDING")
     created_at      = Column(TIMESTAMP, server_default=func.now())
     last_checked_at = Column(TIMESTAMP, nullable=True)
@@ -103,6 +107,8 @@ class Alert(Base):
     __table_args__ = (
         Index("idx_alerts_status", "status"),
         Index("idx_alerts_patient", "patient_id"),
+        Index("idx_alerts_source", "source"),
+        CheckConstraint("source IN ('fake','thingspeak')", name="ck_alerts_source"),
     )
 
 

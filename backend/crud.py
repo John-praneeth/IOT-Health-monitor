@@ -13,8 +13,21 @@ import models
 import schemas
 import whatsapp_notifier
 import alert_engine
+import data_sources
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_source_name(value: str | None) -> str:
+    src = (value or "fake").strip().lower()
+    return src if src in {"fake", "thingspeak"} else "fake"
+
+
+def _active_source_name() -> str:
+    try:
+        return _normalize_source_name(data_sources.get_data_source_config().get("source"))
+    except Exception:
+        return "fake"
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
@@ -37,9 +50,11 @@ def get_audit_logs(db: Session, entity: str = None, limit: int = 200, offset: in
 # ── Vitals ────────────────────────────────────────────────────────────────────
 def create_vitals(db: Session, vital):
     if isinstance(vital, dict):
-        db_vital = models.Vitals(**vital)
+        payload = dict(vital)
     else:
-        db_vital = models.Vitals(**vital.model_dump())
+        payload = vital.model_dump()
+    payload["source"] = _normalize_source_name(payload.get("source") or _active_source_name())
+    db_vital = models.Vitals(**payload)
     db.add(db_vital)
     db.commit()
     db.refresh(db_vital)
@@ -52,11 +67,13 @@ def sync_alerts_for_vital(db: Session, vital_record: models.Vitals):
     Returns tuple: (triggered_types, new_alerts).
     """
     patient_id = vital_record.patient_id
+    source = _normalize_source_name(getattr(vital_record, "source", None) or _active_source_name())
     triggered = alert_engine.check_alerts(vital_record)
 
     if not triggered:
         pending = db.query(models.Alert).filter(
             models.Alert.patient_id == patient_id,
+            models.Alert.source == source,
             models.Alert.status.in_(["PENDING", "ESCALATED"]),
         ).all()
         for old_alert in pending:
@@ -74,6 +91,7 @@ def sync_alerts_for_vital(db: Session, vital_record: models.Vitals):
     triggered_set = set(triggered)
     pending = db.query(models.Alert).filter(
         models.Alert.patient_id == patient_id,
+        models.Alert.source == source,
         models.Alert.status.in_(["PENDING", "ESCALATED"]),
         ~models.Alert.alert_type.in_(triggered_set),
     ).all()
@@ -95,6 +113,7 @@ def sync_alerts_for_vital(db: Session, vital_record: models.Vitals):
             patient_id=patient_id,
             vital_id=vital_record.vital_id,
             alert_type=alert_type,
+            source=source,
         )
         if alert:
             new_alerts.append(alert)
@@ -108,10 +127,13 @@ def get_vitals(
     doctor_id: int = None,
     nurse_id: int = None,
     patient_ids: list[int] | None = None,
+    source: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ):
     q = db.query(models.Vitals)
+    source_name = _normalize_source_name(source or _active_source_name())
+    q = q.filter(models.Vitals.source == source_name)
     if patient_id:
         q = q.filter(models.Vitals.patient_id == patient_id)
     if doctor_id:
@@ -128,21 +150,24 @@ def get_vitals(
 
 
 def get_latest_vital(db: Session, patient_id: int):
+    source_name = _active_source_name()
     return (
         db.query(models.Vitals)
-        .filter(models.Vitals.patient_id == patient_id)
+        .filter(models.Vitals.patient_id == patient_id, models.Vitals.source == source_name)
         .order_by(models.Vitals.timestamp.desc())
         .first()
     )
 
 
 # ── Alerts ────────────────────────────────────────────────────────────────────
-def create_alert(db: Session, patient_id: int, vital_id: int, alert_type: str):
+def create_alert(db: Session, patient_id: int, vital_id: int, alert_type: str, source: str | None = None):
+    source_name = _normalize_source_name(source or _active_source_name())
     # De-duplicate: skip if a PENDING or ESCALATED alert of the same type already exists
     duplicate = (
         db.query(models.Alert)
         .filter(
             models.Alert.patient_id == patient_id,
+            models.Alert.source == source_name,
             models.Alert.alert_type == alert_type,
             models.Alert.status.in_(["PENDING", "ESCALATED"]),
         )
@@ -159,6 +184,7 @@ def create_alert(db: Session, patient_id: int, vital_id: int, alert_type: str):
         patient_id=patient_id,
         vital_id=vital_id,
         alert_type=alert_type,
+        source=source_name,
         status="PENDING",
         created_at=datetime.now(),
     )
@@ -175,10 +201,13 @@ def get_alerts(
     doctor_id: int = None,
     nurse_id: int = None,
     patient_ids: list[int] | None = None,
+    source: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ):
     q = db.query(models.Alert)
+    source_name = _normalize_source_name(source or _active_source_name())
+    q = q.filter(models.Alert.source == source_name)
     if status:
         q = q.filter(models.Alert.status == status)
     if doctor_id:
@@ -242,9 +271,14 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
     Create notifications for those doctors + nurses at the patient's hospital.
     """
     cutoff = datetime.now() - timedelta(minutes=threshold_minutes)
+    source_name = _active_source_name()
     stale = (
         db.query(models.Alert)
-        .filter(models.Alert.status == "PENDING", models.Alert.created_at < cutoff)
+        .filter(
+            models.Alert.status == "PENDING",
+            models.Alert.created_at < cutoff,
+            models.Alert.source == source_name,
+        )
         .all()
     )
     escalated = []
@@ -777,13 +811,19 @@ def create_hospital(db: Session, hospital: schemas.HospitalCreate):
 
 
 # ── Dashboard Stats ───────────────────────────────────────────────────────────
-def _duplicate_vitals_count_for_patients(db: Session, patient_ids: list[int] | None = None) -> int:
+def _duplicate_vitals_count_for_patients(
+    db: Session,
+    patient_ids: list[int] | None = None,
+    source: str | None = None,
+) -> int:
+    source_name = _normalize_source_name(source or _active_source_name())
     q = (
         db.query(
             models.Vitals.patient_id,
             models.Vitals.timestamp,
             func.count(models.Vitals.vital_id).label("c"),
         )
+        .filter(models.Vitals.source == source_name)
         .group_by(models.Vitals.patient_id, models.Vitals.timestamp)
         .having(func.count(models.Vitals.vital_id) > 1)
     )
@@ -796,7 +836,8 @@ def _duplicate_vitals_count_for_patients(db: Session, patient_ids: list[int] | N
 
 def get_dashboard_stats(db: Session, current_user: models.User):
     patient_q = db.query(models.Patient)
-    alert_q = db.query(models.Alert)
+    source_name = _active_source_name()
+    alert_q = db.query(models.Alert).filter(models.Alert.source == source_name)
     patient_ids_for_scope = None
 
     if current_user.role == "DOCTOR":
@@ -866,7 +907,7 @@ def get_dashboard_stats(db: Session, current_user: models.User):
         pending_alerts=alert_q.filter(models.Alert.status == "PENDING").count(),
         escalated_alerts=alert_q.filter(models.Alert.status == "ESCALATED").count(),
         acknowledged_alerts=alert_q.filter(models.Alert.status == "ACKNOWLEDGED").count(),
-        duplicate_vitals_count=_duplicate_vitals_count_for_patients(db, patient_ids_for_scope),
+        duplicate_vitals_count=_duplicate_vitals_count_for_patients(db, patient_ids_for_scope, source=source_name),
     )
 
 

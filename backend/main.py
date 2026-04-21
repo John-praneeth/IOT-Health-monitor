@@ -50,6 +50,40 @@ require_redis_on_startup()
 # ── Create tables ─────────────────────────────────────────────────────────────
 Base.metadata.create_all(bind=engine)
 
+
+def _ensure_source_partition_columns() -> None:
+    """Backfill schema on existing deployments without requiring manual migration."""
+    if engine.dialect.name != "postgresql":
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE vitals ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'fake'"))
+        conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'fake'"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vitals_source ON vitals (source)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_alerts_source ON alerts (source)"))
+        conn.execute(text(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_vitals_source'
+                ) THEN
+                    ALTER TABLE vitals
+                    ADD CONSTRAINT ck_vitals_source CHECK (source IN ('fake','thingspeak'));
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_alerts_source'
+                ) THEN
+                    ALTER TABLE alerts
+                    ADD CONSTRAINT ck_alerts_source CHECK (source IN ('fake','thingspeak'));
+                END IF;
+            END
+            $$;
+            """
+        ))
+
+
+_ensure_source_partition_columns()
+
 logger = logging.getLogger(__name__)
 
 # ── WebSocket config ──────────────────────────────────────────────────────────

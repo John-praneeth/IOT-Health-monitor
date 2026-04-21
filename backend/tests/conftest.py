@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 # Ensure security-critical env vars exist before importing app/auth modules.
 os.environ.setdefault("SECRET_KEY", "unit-local-secret-very-strong-123456789")
 # Keep tests isolated from any live Redis instance running on the host.
-os.environ["REDIS_URL"] = "redis://127.0.0.1:0/0"
+os.environ["REDIS_URL"] = "redis://127.0.0.1:63999/0"
 os.environ["REDIS_REQUIRED"] = "false"
 
 # Ensure backend is importable
@@ -35,7 +35,7 @@ TestSession = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 @pytest.fixture(autouse=True)
 def setup_db():
     """Create all tables before each test, drop after."""
-    database.REDIS_URL = "redis://127.0.0.1:0/0"
+    database.REDIS_URL = "redis://127.0.0.1:63999/0"
     database._redis_client = None
     database._redis_available = False
     limiter.reset()
