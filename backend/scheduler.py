@@ -22,6 +22,7 @@ logging.basicConfig(
 
 INTERVAL_SECONDS = 10
 ESCALATION_MINUTES = 2
+FAKE_VITALS_ENABLED_SETTING_KEY = "fake_vitals_generation_enabled"
 
 # ── Redis pub/sub publisher (optional) ────────────────────────────────────────
 import os
@@ -57,9 +58,18 @@ def _publish_vitals(patients_vitals: list):
 def run():
     logging.info("Scheduler started.  Interval = %ds  |  Escalation = %d min", INTERVAL_SECONDS, ESCALATION_MINUTES)
     last_source = None
+    last_enabled = None
     while True:
         db = SessionLocal()
         try:
+            setting = db.query(models.AppSetting).filter(models.AppSetting.setting_key == FAKE_VITALS_ENABLED_SETTING_KEY).first()
+            enabled = True if not setting else str(setting.setting_value or "").strip().lower() in {"1", "true", "yes", "on"}
+            if enabled != last_enabled:
+                logging.info("Fake vitals generation is now %s", "ENABLED" if enabled else "DISABLED")
+                last_enabled = enabled
+            if not enabled:
+                continue
+
             current_source = data_sources.get_data_source_config()["source"]
             if current_source != last_source:
                 logging.info("Vitals source switched to: %s", current_source)

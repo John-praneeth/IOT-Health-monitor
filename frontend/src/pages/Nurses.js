@@ -127,6 +127,16 @@ export default function Nurses() {
         <p>Manage nurses and view their assigned patients</p>
       </div>
 
+      <div className="graphic-banner">
+        <div className="banner-title">Nursing Operations Desk</div>
+        <div className="banner-subtitle">Department-level staffing and patient ownership continuity.</div>
+        <div className="chip-row">
+          <span className="status-chip">Department Roster</span>
+          <span className="status-chip">Shift-ready</span>
+          <span className="status-chip">Patient Coverage</span>
+        </div>
+      </div>
+
       {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
 
       {canManage && (
@@ -261,8 +271,8 @@ export default function Nurses() {
       </div>
 
       {editing && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:999 }} onClick={() => setEditing(null)}>
-          <div style={{ background:'#1e293b', borderRadius:16, padding:24, width:520, border:'1px solid #334155' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setEditing(null)}>
+          <div className="modal-card" style={{ padding:24, width:520 }} onClick={e => e.stopPropagation()}>
             <h3 style={{ color:'#e2e8f0', marginTop:0 }}>✏️ Edit Nurse</h3>
             <div className="form-grid" style={{ padding:0 }}>
               <div className="form-group"><label>Name</label><input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></div>

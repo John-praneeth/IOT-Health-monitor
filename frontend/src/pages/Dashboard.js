@@ -122,6 +122,29 @@ export default function Dashboard() {
     return 'normal';
   };
 
+  const statusCounts = patients.reduce((acc, p) => {
+    const s = getStatus(p.patient_id);
+    acc[s] = (acc[s] || 0) + 1;
+    return acc;
+  }, { critical: 0, warning: 0, normal: 0, 'no-data': 0 });
+
+  const totalForBars = Math.max(1, patients.length);
+  const barSeries = [
+    { key: 'critical', label: 'Critical', value: statusCounts.critical, color: '#fb7185' },
+    { key: 'warning', label: 'Warning', value: statusCounts.warning, color: '#f59e0b' },
+    { key: 'normal', label: 'Stable', value: statusCounts.normal, color: '#22c55e' },
+    { key: 'no-data', label: 'No Data', value: statusCounts['no-data'], color: '#60a5fa' },
+  ];
+
+  const totalAlerts = Math.max(1, alerts.length);
+  const ackAlerts = alerts.filter(a => a.status === 'ACKNOWLEDGED').length;
+  const pendingPct = Math.round((pendingAlerts.length / totalAlerts) * 100);
+  const escalatedPct = Math.round((escalatedAlerts.length / totalAlerts) * 100);
+  const ackPct = Math.max(0, 100 - pendingPct - escalatedPct);
+  const ringBg = {
+    background: `conic-gradient(#fb7185 0 ${escalatedPct}%, #f59e0b ${escalatedPct}% ${escalatedPct + pendingPct}%, #22c55e ${escalatedPct + pendingPct}% 100%)`,
+  };
+
   return (
     <div>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -195,8 +218,18 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <div className="graphic-banner">
+        <div className="banner-title">Live Care Operations Pulse</div>
+        <div className="banner-subtitle">Track admissions, deteriorations, and response posture from one place.</div>
+        <div className="chip-row">
+          <span className="status-chip">Realtime Streaming</span>
+          <span className="status-chip">Alert Correlation</span>
+          <span className="status-chip">Role-aware Triage</span>
+        </div>
+      </div>
+
       {/* Doctor filter */}
-      <div style={{ display:'flex', gap:12, marginBottom:20 }}>
+      <div className="filter-row">
         <select
           style={{ background:'#1e293b', border:'1px solid #334155', color:'#e2e8f0',
                    borderRadius:8, padding:'8px 12px', fontSize:13 }}
@@ -245,6 +278,48 @@ export default function Dashboard() {
         <div className="stat-card" style={{ background:'linear-gradient(135deg,#065f46,#047857)' }}>
           <div className="label">Acknowledged</div>
           <div className="value">{stats?.acknowledged_alerts ?? 0}</div>
+        </div>
+      </div>
+
+      <div className="graph-grid">
+        <div className="graph-card">
+          <div className="graph-title">3D Patient Load Prism</div>
+          <div className="graph-subtitle">Live distribution of clinical stability by patient status.</div>
+          <div className="bar3d-wrap">
+            {barSeries.map((s, i) => {
+              const h = Math.max(14, Math.round((s.value / totalForBars) * 120));
+              return (
+                <div className="bar3d-col" key={s.key}>
+                  <div
+                    className="bar3d"
+                    style={{
+                      '--bar-color': s.color,
+                      height: `${h}px`,
+                      background: `linear-gradient(180deg, ${s.color}, rgba(6,18,28,.9))`,
+                      animationDelay: `${i * 0.08}s`,
+                    }}
+                  >
+                    <span style={{ display: 'none' }} />
+                  </div>
+                  <div className="bar3d-label">{s.label}</div>
+                  <div className="bar3d-value">{s.value}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="graph-card">
+          <div className="graph-title">3D Alert Wave Ring</div>
+          <div className="graph-subtitle">Escalated vs pending vs acknowledged response state.</div>
+          <div className="ring3d-shell" style={ringBg}>
+            <div className="ring3d-center">Alerts<span>{alerts.length}</span></div>
+          </div>
+          <div className="graph-legend">
+            <span className="graph-legend-item"><span className="graph-dot" style={{ background: '#fb7185' }} />Escalated {escalatedPct}%</span>
+            <span className="graph-legend-item"><span className="graph-dot" style={{ background: '#f59e0b' }} />Pending {pendingPct}%</span>
+            <span className="graph-legend-item"><span className="graph-dot" style={{ background: '#22c55e' }} />Ack {ackPct}%</span>
+          </div>
         </div>
       </div>
 

@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap');
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -5,12 +7,14 @@
 }
 
 body {
-  font-family: 'Inter', sans-serif;
-  background: #0f172a;
+  font-family: 'Manrope', sans-serif;
+  background: #08131e;
   color: #e2e8f0;
   min-height: 100vh;
+  letter-spacing: 0.01em;
 }
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #1e293b; }
-::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0f2536; }
+::-webkit-scrollbar-thumb { background: #2a516b; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #3b6e91; }

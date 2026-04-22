@@ -111,6 +111,16 @@ export default function Alerts() {
         </p>
       </div>
 
+      <div className="graphic-banner">
+        <div className="banner-title">Incident Escalation Command</div>
+        <div className="banner-subtitle">Prioritize unresolved alerts and keep response latency low.</div>
+        <div className="chip-row">
+          <span className="status-chip">Escalation Watch</span>
+          <span className="status-chip">Doctor Routing</span>
+          <span className="status-chip">WhatsApp Delivery</span>
+        </div>
+      </div>
+
       {/* Stats row */}
       <div className="stats-grid" style={{ gridTemplateColumns:'repeat(4,1fr)', marginBottom:24 }}>
         <div className="stat-card red">
@@ -132,7 +142,7 @@ export default function Alerts() {
       </div>
 
       {/* Filters */}
-      <div style={{ display:'flex', gap:10, marginBottom:20, flexWrap:'wrap', alignItems:'center' }}>
+      <div className="filter-row">
         {['', 'PENDING', 'ESCALATED', 'ACKNOWLEDGED'].map(s => (
           <button
             key={s}

@@ -53,6 +53,11 @@ export const getVitals      = (params={})    => API.get('/vitals', { params });
 export const getLatestVital = (patientId)    => API.get(`/vitals/latest/${patientId}`);
 export const getVitalsSourceConfig = ()      => API.get('/vitals/source');
 export const updateVitalsSourceConfig = (data) => API.put('/vitals/source', data);
+export const getFakeVitalsStatus = ()        => API.get('/admin/fake-vitals/status');
+export const forceStartFakeVitals = ()       => API.post('/admin/fake-vitals/force-start');
+export const forceStopFakeVitals = ()        => API.post('/admin/fake-vitals/force-stop');
+export const cleanupVitalsByTime = (data)    => API.post('/admin/vitals/cleanup', data);
+export const freshResetDomainData = ()       => API.post('/admin/reset/fresh');
 
 // ── Alerts ────────────────────────────────────────────────
 export const getAlerts         = (params={}) => API.get('/alerts', { params });

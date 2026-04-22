@@ -73,6 +73,16 @@ export default function Hospitals() {
         <p>Manage hospitals in the system</p>
       </div>
 
+      <div className="graphic-banner">
+        <div className="banner-title">Hospital Registry Hub</div>
+        <div className="banner-subtitle">Maintain institutional nodes feeding your care network.</div>
+        <div className="chip-row">
+          <span className="status-chip">Facility Mapping</span>
+          <span className="status-chip">Contact Matrix</span>
+          <span className="status-chip">Network Ready</span>
+        </div>
+      </div>
+
       {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
 
       {canManage && (

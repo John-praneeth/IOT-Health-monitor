@@ -4,6 +4,11 @@ import {
   getHealthFull,
   getVitalsSourceConfig,
   updateVitalsSourceConfig,
+  getFakeVitalsStatus,
+  forceStartFakeVitals,
+  forceStopFakeVitals,
+  cleanupVitalsByTime,
+  freshResetDomainData,
 } from '../api';
 import { getDocsUrl, getRedocUrl } from '../config';
 
@@ -13,11 +18,23 @@ export default function SystemStatus() {
   const [loading, setLoading]   = useState(true);
   const [lastCheck, setLastCheck] = useState(null);
   const [sourceConfig, setSourceConfig] = useState(null);
+  const [fakeVitalsStatus, setFakeVitalsStatus] = useState(null);
   const [sourceForm, setSourceForm] = useState({
     source: 'fake',
   });
   const [savingSource, setSavingSource] = useState(false);
   const [sourceMessage, setSourceMessage] = useState('');
+  const [runtimeMessage, setRuntimeMessage] = useState('');
+  const [cleanupMessage, setCleanupMessage] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
+  const [runtimeBusy, setRuntimeBusy] = useState(false);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [cleanupForm, setCleanupForm] = useState({
+    mode: 'last_24h',
+    before_datetime: '',
+    source: 'all',
+  });
   const role = (localStorage.getItem('role') || '').toUpperCase();
   const isAdmin = role === 'ADMIN';
 
@@ -28,9 +45,12 @@ export default function SystemStatus() {
         getDashboardStats(),
         getHealthFull(),
       ];
-      if (isAdmin) requests.push(getVitalsSourceConfig());
+      if (isAdmin) {
+        requests.push(getVitalsSourceConfig());
+        requests.push(getFakeVitalsStatus());
+      }
       const responses = await Promise.allSettled(requests);
-      const [statsRes, healthRes, sourceRes] = responses;
+      const [statsRes, healthRes, sourceRes, fakeVitalsRes] = responses;
 
       if (statsRes.status === 'fulfilled') {
         setStats(statsRes.value.data);
@@ -45,6 +65,9 @@ export default function SystemStatus() {
         setSourceForm({
           source: sourceRes.value.data.source,
         });
+      }
+      if (isAdmin && fakeVitalsRes?.status === 'fulfilled' && fakeVitalsRes.value?.data) {
+        setFakeVitalsStatus(fakeVitalsRes.value.data);
       }
     } catch (err) {
       setHealth({ status: 'error', db: { status: 'error', detail: 'Backend unreachable' }, redis: { status: 'error', detail: 'Backend unreachable' }, whatsapp: { status: 'unknown', detail: 'Backend unreachable' } });
@@ -72,10 +95,10 @@ export default function SystemStatus() {
 
   // ── styles ───────────────────────────────────────────────────────────────
   const card = {
-    background: '#1e293b',
+    background: 'linear-gradient(165deg, rgba(7, 30, 45, 0.86), rgba(8, 23, 36, 0.92))',
     borderRadius: 10,
     padding: '18px 20px',
-    border: '1px solid #334155',
+    border: '1px solid rgba(140, 190, 221, 0.22)',
   };
 
   const statCard = (color) => ({
@@ -124,12 +147,94 @@ export default function SystemStatus() {
     }
   };
 
+  const handleForceStart = async () => {
+    setRuntimeBusy(true);
+    setRuntimeMessage('');
+    try {
+      const res = await forceStartFakeVitals();
+      setFakeVitalsStatus({ enabled: res.data.enabled });
+      setRuntimeMessage(res.data.detail || 'Fake vitals started.');
+      fetchAll();
+    } catch (err) {
+      setRuntimeMessage(err?.response?.data?.detail || 'Failed to start fake vitals.');
+    } finally {
+      setRuntimeBusy(false);
+    }
+  };
+
+  const handleForceStop = async () => {
+    setRuntimeBusy(true);
+    setRuntimeMessage('');
+    try {
+      const res = await forceStopFakeVitals();
+      setFakeVitalsStatus({ enabled: res.data.enabled });
+      setRuntimeMessage(res.data.detail || 'Fake vitals stopped.');
+      fetchAll();
+    } catch (err) {
+      setRuntimeMessage(err?.response?.data?.detail || 'Failed to stop fake vitals.');
+    } finally {
+      setRuntimeBusy(false);
+    }
+  };
+
+  const handleCleanupVitals = async () => {
+    setCleanupBusy(true);
+    setCleanupMessage('');
+    try {
+      const payload = {
+        mode: cleanupForm.mode,
+        source: cleanupForm.source,
+      };
+      if (cleanupForm.mode === 'before_datetime') {
+        if (!cleanupForm.before_datetime) {
+          setCleanupMessage('Please select a date/time for custom cleanup.');
+          setCleanupBusy(false);
+          return;
+        }
+        payload.before_datetime = new Date(cleanupForm.before_datetime).toISOString();
+      }
+      const res = await cleanupVitalsByTime(payload);
+      setCleanupMessage(`${res.data.detail} Deleted vitals: ${res.data.deleted_vitals}`);
+      fetchAll();
+    } catch (err) {
+      setCleanupMessage(err?.response?.data?.detail || 'Vitals cleanup failed.');
+    } finally {
+      setCleanupBusy(false);
+    }
+  };
+
+  const handleFreshReset = async () => {
+    const ok = window.confirm('This will delete doctors, nurses, patients, vitals, alerts, and hospitals. Admin users are kept. Continue?');
+    if (!ok) return;
+    setResetBusy(true);
+    setResetMessage('');
+    try {
+      const res = await freshResetDomainData();
+      setResetMessage(`${res.data.detail} Deleted patients: ${res.data.deleted_patients}, vitals: ${res.data.deleted_vitals}`);
+      fetchAll();
+    } catch (err) {
+      setResetMessage(err?.response?.data?.detail || 'Fresh reset failed.');
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
   return (
     <div>
       {/* Header */}
       <div className="page-header">
         <h1>🖥️ System Status</h1>
         <p>Live overview of services, database health, and alert activity</p>
+      </div>
+
+      <div className="graphic-banner">
+        <div className="banner-title">Platform Reliability Matrix</div>
+        <div className="banner-subtitle">Real-time operational health of core infrastructure and message delivery.</div>
+        <div className="chip-row">
+          <span className="status-chip">DB Health</span>
+          <span className="status-chip">Redis Signal</span>
+          <span className="status-chip">WhatsApp Pipeline</span>
+        </div>
       </div>
 
       {/* Toolbar */}
@@ -254,6 +359,93 @@ export default function SystemStatus() {
           </div>
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
             {sourceMessage && <span style={{ color: sourceMessage.includes('Failed') ? '#f87171' : '#4ade80', fontSize: 12 }}>{sourceMessage}</span>}
+          </div>
+
+          <hr style={{ border: 'none', borderTop: '1px solid rgba(148, 163, 184, 0.25)', margin: '16px 0' }} />
+
+          <h3 style={{ color: '#e2e8f0', fontSize: 15, marginBottom: 10 }}>⚙️ Fake Vitals Runtime</h3>
+          <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 0, marginBottom: 10 }}>
+            Current state: <strong style={{ color: fakeVitalsStatus?.enabled ? '#4ade80' : '#f87171' }}>{fakeVitalsStatus?.enabled ? 'RUNNING' : 'STOPPED'}</strong>
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              onClick={handleForceStart}
+              disabled={runtimeBusy}
+              style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #166534', background: '#14532d', color: '#dcfce7', fontWeight: 600, cursor: runtimeBusy ? 'not-allowed' : 'pointer', opacity: runtimeBusy ? 0.6 : 1 }}
+            >
+              ▶ Force Start
+            </button>
+            <button
+              onClick={handleForceStop}
+              disabled={runtimeBusy}
+              style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #7f1d1d', background: '#7f1d1d', color: '#fee2e2', fontWeight: 600, cursor: runtimeBusy ? 'not-allowed' : 'pointer', opacity: runtimeBusy ? 0.6 : 1 }}
+            >
+              ⏹ Force Stop
+            </button>
+            {runtimeMessage && <span style={{ color: runtimeMessage.toLowerCase().includes('failed') ? '#f87171' : '#4ade80', fontSize: 12 }}>{runtimeMessage}</span>}
+          </div>
+
+          <hr style={{ border: 'none', borderTop: '1px solid rgba(148, 163, 184, 0.25)', margin: '16px 0' }} />
+
+          <h3 style={{ color: '#e2e8f0', fontSize: 15, marginBottom: 10 }}>🧹 Vitals History Cleanup</h3>
+          <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 0, marginBottom: 10 }}>
+            Delete vitals by time window (Google history style) and optionally by source.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
+            <select
+              value={cleanupForm.mode}
+              onChange={(e) => setCleanupForm((prev) => ({ ...prev, mode: e.target.value }))}
+              style={{ padding: '8px 10px', borderRadius: 7, background: '#0b1620', color: '#e2e8f0', border: '1px solid #334155' }}
+            >
+              <option value="last_24h">Older than 24 hours</option>
+              <option value="last_7d">Older than 7 days</option>
+              <option value="last_30d">Older than 30 days</option>
+              <option value="before_datetime">Before custom date/time</option>
+              <option value="all">Delete all vitals</option>
+            </select>
+            <select
+              value={cleanupForm.source}
+              onChange={(e) => setCleanupForm((prev) => ({ ...prev, source: e.target.value }))}
+              style={{ padding: '8px 10px', borderRadius: 7, background: '#0b1620', color: '#e2e8f0', border: '1px solid #334155' }}
+            >
+              <option value="all">All Sources</option>
+              <option value="fake">Fake Only</option>
+              <option value="thingspeak">ThingSpeak Only</option>
+            </select>
+            <input
+              type="datetime-local"
+              value={cleanupForm.before_datetime}
+              onChange={(e) => setCleanupForm((prev) => ({ ...prev, before_datetime: e.target.value }))}
+              disabled={cleanupForm.mode !== 'before_datetime'}
+              style={{ padding: '8px 10px', borderRadius: 7, background: '#0b1620', color: '#e2e8f0', border: '1px solid #334155', opacity: cleanupForm.mode !== 'before_datetime' ? 0.5 : 1 }}
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              onClick={handleCleanupVitals}
+              disabled={cleanupBusy}
+              style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #0f766e', background: '#115e59', color: '#ccfbf1', fontWeight: 600, cursor: cleanupBusy ? 'not-allowed' : 'pointer', opacity: cleanupBusy ? 0.6 : 1 }}
+            >
+              {cleanupBusy ? 'Cleaning…' : 'Run Cleanup'}
+            </button>
+            {cleanupMessage && <span style={{ color: cleanupMessage.toLowerCase().includes('failed') ? '#f87171' : '#4ade80', fontSize: 12 }}>{cleanupMessage}</span>}
+          </div>
+
+          <hr style={{ border: 'none', borderTop: '1px solid rgba(148, 163, 184, 0.25)', margin: '16px 0' }} />
+
+          <h3 style={{ color: '#e2e8f0', fontSize: 15, marginBottom: 10 }}>🗑 Fresh Reset</h3>
+          <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 0, marginBottom: 10 }}>
+            Deletes doctors, nurses, patients, vitals, alerts, and hospitals. Admin account is preserved.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              onClick={handleFreshReset}
+              disabled={resetBusy}
+              style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #b91c1c', background: '#991b1b', color: '#fee2e2', fontWeight: 700, cursor: resetBusy ? 'not-allowed' : 'pointer', opacity: resetBusy ? 0.6 : 1 }}
+            >
+              {resetBusy ? 'Resetting…' : 'Run Fresh Reset'}
+            </button>
+            {resetMessage && <span style={{ color: resetMessage.toLowerCase().includes('failed') ? '#f87171' : '#4ade80', fontSize: 12 }}>{resetMessage}</span>}
           </div>
         </div>
       )}

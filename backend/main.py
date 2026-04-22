@@ -97,6 +97,7 @@ WS_REDIS_CHANNEL = "iot:vitals"
 ALLOW_ADMIN_ALERT_ACK = os.getenv("ALLOW_ADMIN_ALERT_ACK", "false").lower() in ("1", "true", "yes")
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
 FORGOT_PASSWORD_CODE_TTL_MINUTES = int(os.getenv("FORGOT_PASSWORD_CODE_TTL_MINUTES", "10"))
+FAKE_VITALS_ENABLED_SETTING_KEY = "fake_vitals_generation_enabled"
 
 # ── Basic Prometheus-compatible metrics (no external dependency) ─────────────
 APP_STARTED_AT = time.time()
@@ -224,6 +225,25 @@ def _set_refresh_cookie(response: Response, refresh_token: str):
 
 def _clear_refresh_cookie(response: Response):
     response.delete_cookie(key=auth.REFRESH_COOKIE_NAME, path="/")
+
+
+def _setting_bool(db: Session, key: str, default: bool = False) -> bool:
+    row = db.query(models.AppSetting).filter(models.AppSetting.setting_key == key).first()
+    if not row or row.setting_value is None:
+        return default
+    return str(row.setting_value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _set_setting_bool(db: Session, key: str, value: bool) -> bool:
+    row = db.query(models.AppSetting).filter(models.AppSetting.setting_key == key).first()
+    text_value = "true" if value else "false"
+    if row:
+        row.setting_value = text_value
+    else:
+        row = models.AppSetting(setting_key=key, setting_value=text_value)
+        db.add(row)
+    db.commit()
+    return value
 
 
 def filter_response_by_role(current_user: models.User, data):
@@ -1932,6 +1952,155 @@ def update_vitals_source_config(
         "thingspeak_read_api_key_set": bool(config["thingspeak_read_api_key"]),
         "thingspeak_temp_unit": config["thingspeak_temp_unit"],
         "thingspeak_stale_seconds": config["thingspeak_stale_seconds"],
+    }
+
+
+@app.get("/admin/fake-vitals/status", response_model=schemas.FakeVitalsControlOut, tags=["Admin Controls"])
+def fake_vitals_status(
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    return {
+        "enabled": _setting_bool(db, FAKE_VITALS_ENABLED_SETTING_KEY, default=True),
+    }
+
+
+@app.post("/admin/fake-vitals/force-start", response_model=schemas.FakeVitalsControlActionOut, tags=["Admin Controls"])
+def force_start_fake_vitals(
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
+):
+    _set_setting_bool(db, FAKE_VITALS_ENABLED_SETTING_KEY, True)
+    crud.write_audit(db, "UPDATE", "fake_vitals_control", user_id=current_user.user_id)
+    return {
+        "detail": "Fake vitals generation force-started",
+        "enabled": True,
+    }
+
+
+@app.post("/admin/fake-vitals/force-stop", response_model=schemas.FakeVitalsControlActionOut, tags=["Admin Controls"])
+def force_stop_fake_vitals(
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
+):
+    _set_setting_bool(db, FAKE_VITALS_ENABLED_SETTING_KEY, False)
+    crud.write_audit(db, "UPDATE", "fake_vitals_control", user_id=current_user.user_id)
+    return {
+        "detail": "Fake vitals generation force-stopped",
+        "enabled": False,
+    }
+
+
+@app.post("/admin/vitals/cleanup", response_model=schemas.VitalsCleanupResultOut, tags=["Admin Controls"])
+def cleanup_vitals(
+    payload: schemas.VitalsCleanupRequest,
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    now_utc = datetime.now(timezone.utc)
+    cutoff = None
+    if payload.mode == "last_24h":
+        cutoff = now_utc - timedelta(hours=24)
+    elif payload.mode == "last_7d":
+        cutoff = now_utc - timedelta(days=7)
+    elif payload.mode == "last_30d":
+        cutoff = now_utc - timedelta(days=30)
+    elif payload.mode == "before_datetime":
+        if not payload.before_datetime:
+            raise HTTPException(status_code=400, detail="before_datetime is required for mode=before_datetime")
+        cutoff = payload.before_datetime
+
+    vitals_q = db.query(models.Vitals)
+    if payload.source in {"fake", "thingspeak"}:
+        vitals_q = vitals_q.filter(models.Vitals.source == payload.source)
+    if cutoff is not None:
+        vitals_q = vitals_q.filter(models.Vitals.timestamp <= cutoff)
+
+    vital_ids = [row[0] for row in vitals_q.with_entities(models.Vitals.vital_id).all()]
+    if not vital_ids:
+        return {
+            "detail": "No vitals matched cleanup filters",
+            "deleted_vitals": 0,
+            "deleted_alerts": 0,
+            "deleted_escalations": 0,
+            "deleted_notifications": 0,
+            "deleted_whatsapp_logs": 0,
+            "deleted_sla_records": 0,
+        }
+
+    alert_ids = [
+        row[0]
+        for row in db.query(models.Alert.alert_id)
+        .filter(models.Alert.vital_id.in_(vital_ids))
+        .all()
+    ]
+
+    deleted_escalations = 0
+    deleted_notifications = 0
+    deleted_whatsapp_logs = 0
+    if alert_ids:
+        deleted_escalations = db.query(models.AlertEscalation).filter(models.AlertEscalation.alert_id.in_(alert_ids)).delete(synchronize_session=False)
+        deleted_notifications = db.query(models.AlertNotification).filter(models.AlertNotification.alert_id.in_(alert_ids)).delete(synchronize_session=False)
+        deleted_whatsapp_logs = db.query(models.WhatsAppLog).filter(models.WhatsAppLog.alert_id.in_(alert_ids)).delete(synchronize_session=False)
+
+    deleted_sla_records = db.query(models.SLARecord).filter(models.SLARecord.alert_id.in_(alert_ids or [-1])).delete(synchronize_session=False)
+    deleted_alerts = db.query(models.Alert).filter(models.Alert.vital_id.in_(vital_ids)).delete(synchronize_session=False)
+    deleted_vitals = db.query(models.Vitals).filter(models.Vitals.vital_id.in_(vital_ids)).delete(synchronize_session=False)
+    db.commit()
+
+    crud.write_audit(db, "DELETE", "vitals_cleanup", user_id=current_user.user_id)
+    return {
+        "detail": "Vitals cleanup completed",
+        "deleted_vitals": deleted_vitals,
+        "deleted_alerts": deleted_alerts,
+        "deleted_escalations": deleted_escalations,
+        "deleted_notifications": deleted_notifications,
+        "deleted_whatsapp_logs": deleted_whatsapp_logs,
+        "deleted_sla_records": deleted_sla_records,
+    }
+
+
+@app.post("/admin/reset/fresh", response_model=schemas.FreshResetResultOut, tags=["Admin Controls"])
+def fresh_reset_domain_data(
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
+):
+    # Delete alert-related dependent rows first to satisfy foreign keys.
+    alert_ids = [row[0] for row in db.query(models.Alert.alert_id).all()]
+    if alert_ids:
+        db.query(models.AlertEscalation).filter(models.AlertEscalation.alert_id.in_(alert_ids)).delete(synchronize_session=False)
+        db.query(models.AlertNotification).filter(models.AlertNotification.alert_id.in_(alert_ids)).delete(synchronize_session=False)
+        db.query(models.WhatsAppLog).filter(models.WhatsAppLog.alert_id.in_(alert_ids)).delete(synchronize_session=False)
+
+    deleted_sla_records = db.query(models.SLARecord).delete(synchronize_session=False)
+    _ = deleted_sla_records
+    deleted_alerts = db.query(models.Alert).delete(synchronize_session=False)
+    deleted_vitals = db.query(models.Vitals).delete(synchronize_session=False)
+    db.query(models.ChatMessage).delete(synchronize_session=False)
+    db.query(models.PasswordResetToken).delete(synchronize_session=False)
+
+    deleted_patients = db.query(models.Patient).delete(synchronize_session=False)
+    deleted_doctors = db.query(models.Doctor).delete(synchronize_session=False)
+    deleted_nurses = db.query(models.Nurse).delete(synchronize_session=False)
+    deleted_hospitals = db.query(models.Hospital).delete(synchronize_session=False)
+
+    deleted_users = db.query(models.User).filter(models.User.role != "ADMIN").delete(synchronize_session=False)
+
+    db.commit()
+    _set_setting_bool(db, FAKE_VITALS_ENABLED_SETTING_KEY, False)
+    crud.write_audit(db, "DELETE", "fresh_reset", user_id=current_user.user_id)
+
+    return {
+        "detail": "Fresh reset completed. Admin users preserved.",
+        "deleted_users": deleted_users,
+        "deleted_patients": deleted_patients,
+        "deleted_doctors": deleted_doctors,
+        "deleted_nurses": deleted_nurses,
+        "deleted_hospitals": deleted_hospitals,
+        "deleted_vitals": deleted_vitals,
+        "deleted_alerts": deleted_alerts,
     }
 
 

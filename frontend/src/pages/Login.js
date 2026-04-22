@@ -168,17 +168,28 @@ export default function Login({ onLogin }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      minHeight: '100vh', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+      minHeight: '100vh',
+      background: 'radial-gradient(circle at 15% 10%, rgba(45,212,191,.22), transparent 30%), radial-gradient(circle at 85% 15%, rgba(56,189,248,.22), transparent 28%), linear-gradient(145deg, #08131e 0%, #0f2436 55%, #173b4f 100%)',
+      padding: '20px',
     }}>
       <div style={{
-        background: '#1e293b', borderRadius: 16, padding: '32px 36px', width: 440,
-        boxShadow: '0 25px 50px rgba(0,0,0,.4)', border: '1px solid #334155',
+        background: 'linear-gradient(155deg, rgba(8,30,45,.92), rgba(11,24,39,.95))',
+        borderRadius: 20, padding: '30px 32px', width: 460,
+        boxShadow: '0 25px 50px rgba(0,0,0,.35)', border: '1px solid rgba(148,193,224,.3)',
       }}>
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div style={{ fontSize: 48, marginBottom: 6 }}>🏥</div>
-          <h1 style={{ color: '#e2e8f0', fontSize: 22, margin: 0, fontWeight: 700 }}>PatientWatch</h1>
-          <p style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>IoT Healthcare Monitoring</p>
+          <h1 style={{ color: '#ddf5ff', fontSize: 25, margin: 0, fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>PatientWatch</h1>
+          <p style={{ color: '#94b6cb', fontSize: 12, marginTop: 4 }}>IoT Healthcare Monitoring</p>
+        </div>
+
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 18,
+        }}>
+          <div style={{ background: 'rgba(45,212,191,.14)', border: '1px solid rgba(45,212,191,.35)', borderRadius: 10, padding: '8px 6px', textAlign: 'center', color: '#99f6e4', fontSize: 11, fontWeight: 700 }}>LIVE VITALS</div>
+          <div style={{ background: 'rgba(56,189,248,.14)', border: '1px solid rgba(56,189,248,.35)', borderRadius: 10, padding: '8px 6px', textAlign: 'center', color: '#bae6fd', fontSize: 11, fontWeight: 700 }}>ALERT READY</div>
+          <div style={{ background: 'rgba(251,113,133,.14)', border: '1px solid rgba(251,113,133,.35)', borderRadius: 10, padding: '8px 6px', textAlign: 'center', color: '#fecdd3', fontSize: 11, fontWeight: 700 }}>SECURE AUTH</div>
         </div>
 
         {/* Tabs */}
@@ -192,7 +203,7 @@ export default function Login({ onLogin }) {
               flex: 1, padding: '10px 0', border: 'none',
               borderBottom: tab === key ? '2px solid #3b82f6' : '2px solid transparent',
               background: 'transparent',
-              color: tab === key ? '#e2e8f0' : '#64748b',
+              color: tab === key ? '#ddf5ff' : '#88a7bb',
               fontSize: 13, fontWeight: tab === key ? 600 : 400,
               cursor: 'pointer', transition: 'all 0.2s',
             }}>{label}</button>
@@ -201,14 +212,16 @@ export default function Login({ onLogin }) {
 
         {error && (
           <div style={{
-            background: '#7f1d1d', color: '#fca5a5', borderRadius: 8,
+            background: 'rgba(153,27,27,.5)', color: '#fecaca', borderRadius: 10,
+            border: '1px solid rgba(251,113,133,.45)',
             padding: '9px 12px', fontSize: 13, marginBottom: 14,
           }}>⚠️ {error}</div>
         )}
 
         {resetMsg && (
           <div style={{
-            background: '#14532d', color: '#86efac', borderRadius: 8,
+            background: 'rgba(6,78,59,.55)', color: '#a7f3d0', borderRadius: 10,
+            border: '1px solid rgba(52,211,153,.45)',
             padding: '9px 12px', fontSize: 13, marginBottom: 14,
           }}>✅ {resetMsg}</div>
         )}
@@ -436,22 +449,22 @@ export default function Login({ onLogin }) {
 }
 
 const labelStyle = {
-  display: 'block', color: '#94a3b8', fontSize: 11,
+  display: 'block', color: '#a1c0d5', fontSize: 11,
   fontWeight: 600, marginBottom: 5, letterSpacing: '0.05em', textTransform: 'uppercase',
 };
 
 const hintStyle = {
-  color: '#64748b', fontSize: 12, marginBottom: 14, marginTop: 0,
+  color: '#8caabc', fontSize: 12, marginBottom: 14, marginTop: 0,
 };
 
 const inputStyle = {
   width: '100%', padding: '10px 12px', borderRadius: 8,
-  border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0',
+  border: '1px solid rgba(148,193,224,.32)', background: 'rgba(4,24,36,.75)', color: '#e2f2fd',
   fontSize: 13, marginBottom: 10, boxSizing: 'border-box', outline: 'none',
 };
 
 const btnStyle = {
   width: '100%', padding: '12px 0', borderRadius: 8, border: 'none',
-  background: '#3b82f6', color: '#fff', fontWeight: 700, fontSize: 14,
+  background: 'linear-gradient(120deg,#2dd4bf,#0ea5a6)', color: '#042226', fontWeight: 800, fontSize: 14,
   cursor: 'pointer', marginTop: 2, letterSpacing: '0.02em',
 };

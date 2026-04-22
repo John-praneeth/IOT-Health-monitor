@@ -150,9 +150,19 @@ export default function Patients() {
         <p>Manage patients, assign specialist doctors & nurses</p>
       </div>
 
+      <div className="graphic-banner">
+        <div className="banner-title">Patient Flow and Assignment</div>
+        <div className="banner-subtitle">Coordinate room-level ownership, care teams, and bedside telemetry.</div>
+        <div className="chip-row">
+          <span className="status-chip">Room Tracking</span>
+          <span className="status-chip">Doctor Mapping</span>
+          <span className="status-chip">Nurse Handover</span>
+        </div>
+      </div>
+
       {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
 
-      <div style={{ marginBottom: 16, display:'flex', gap:10, flexWrap:'wrap' }}>
+      <div className="filter-row">
         {canCreate && (
           <button className="btn btn-primary" onClick={() => setShowAdd(!showAdd)}>
             {showAdd ? '✕ Cancel' : '+ Add Patient'}
@@ -207,7 +217,7 @@ export default function Patients() {
       )}
 
       {/* Specialization filter for doctor assignment */}
-      <div style={{ marginBottom: 16, display:'flex', gap:10, alignItems:'center' }}>
+      <div className="filter-row">
         <span style={{ color: '#94a3b8', fontSize: 13 }}>Filter doctors by specialization:</span>
         <select
           style={{ background:'#1e293b', border:'1px solid #334155', color:'#e2e8f0',
@@ -299,14 +309,8 @@ export default function Patients() {
 
       {/* Vitals Modal */}
       {vitalsModal && (
-        <div style={{
-          position:'fixed', top:0, left:0, right:0, bottom:0,
-          background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:999,
-        }} onClick={() => setVitalsModal(null)}>
-          <div style={{
-            background:'#1e293b', borderRadius:16, padding:24, width:380,
-            border:'1px solid #334155', boxShadow:'0 15px 40px rgba(0,0,0,.4)',
-          }} onClick={e => e.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setVitalsModal(null)}>
+          <div className="modal-card" style={{ padding:24, width:380 }} onClick={e => e.stopPropagation()}>
             <div style={{ display:'flex', justifyContent:'space-between', marginBottom:16 }}>
               <h3 style={{ color:'#e2e8f0', margin:0 }}>💓 {vitalsModal.patient.name}</h3>
               <button onClick={() => setVitalsModal(null)} style={{ background:'none', border:'none', color:'#94a3b8', fontSize:18, cursor:'pointer' }}>✕</button>
@@ -349,8 +353,8 @@ export default function Patients() {
       )}
 
       {editingPatient && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:999 }} onClick={() => setEditingPatient(null)}>
-          <div style={{ background:'#1e293b', borderRadius:16, padding:24, width:520, border:'1px solid #334155' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setEditingPatient(null)}>
+          <div className="modal-card" style={{ padding:24, width:520 }} onClick={e => e.stopPropagation()}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
               <h3 style={{ color:'#e2e8f0', margin:0 }}>✏️ Edit Patient</h3>
               <button onClick={() => setEditingPatient(null)} style={{ background:'none', border:'none', color:'#94a3b8', fontSize:18, cursor:'pointer' }}>✕</button>

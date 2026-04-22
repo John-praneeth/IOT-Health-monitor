@@ -17,6 +17,7 @@ import './App.css';
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -59,38 +60,61 @@ export default function App() {
   return (
     <Router>
       <div className="app-layout">
-        <aside className="sidebar">
+        <div className="bg-orb orb-a" />
+        <div className="bg-orb orb-b" />
+        <div className="bg-orb orb-c" />
+
+        <button className="mobile-nav-toggle" onClick={() => setSidebarOpen(v => !v)}>
+          {sidebarOpen ? '✕ Close' : '☰ Menu'}
+        </button>
+
+        <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-logo">
             <span className="logo-icon">🏥</span>
             <span className="logo-text">PatientWatch</span>
           </div>
+          <div className="sidebar-subtitle">Intelligent Care Operations</div>
           <nav className="sidebar-nav">
-            <NavLink to="/"         end className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>📊 Dashboard</NavLink>
-            <NavLink to="/patients"      className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>🛏️ Patients</NavLink>
-            <NavLink to="/doctors"       className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>👨‍⚕️ Doctors</NavLink>
-            <NavLink to="/nurses"        className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>👩‍⚕️ Nurses</NavLink>
-            <NavLink to="/vitals"        className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>💓 Vitals</NavLink>
-            <NavLink to="/alerts"        className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>🚨 Alerts</NavLink>
+            <NavLink to="/" end className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>📊 Dashboard</NavLink>
+            <NavLink to="/patients" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🛏️ Patients</NavLink>
+            <NavLink to="/doctors" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>👨‍⚕️ Doctors</NavLink>
+            <NavLink to="/nurses" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>👩‍⚕️ Nurses</NavLink>
+            <NavLink to="/vitals" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>💓 Vitals</NavLink>
+            <NavLink to="/alerts" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🚨 Alerts</NavLink>
             {user.role === 'ADMIN' && (
               <>
-                <NavLink to="/hospitals"   className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>🏢 Hospitals</NavLink>
-                <NavLink to="/whatsapp"    className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>📱 WhatsApp</NavLink>
-                <NavLink to="/status"      className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>🖥️ System Status</NavLink>
-                <NavLink to="/audit-logs"  className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}>📋 Audit Logs</NavLink>
+                <NavLink to="/hospitals" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🏢 Hospitals</NavLink>
+                <NavLink to="/whatsapp" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>📱 WhatsApp</NavLink>
+                <NavLink to="/status" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🖥️ System Status</NavLink>
+                <NavLink to="/audit-logs" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>📋 Audit Logs</NavLink>
               </>
             )}
           </nav>
+
+          <div className="sidebar-insight">
+            <span className="dot dot-green" />
+            <span>Live operations online</span>
+          </div>
+
           <div className="sidebar-user">
-            <span style={{ color: '#94a3b8', fontSize: 12 }}>👤 {user.username} ({user.role})</span>
-            <button onClick={handleLogout} style={{
-              marginTop: 6, padding: '4px 12px', borderRadius: 6, border: '1px solid #475569',
-              background: 'transparent', color: '#f87171', fontSize: 11, cursor: 'pointer',
-            }}>Logout</button>
+            <span className="sidebar-user-name">👤 {user.username} ({user.role})</span>
           </div>
           <div className="sidebar-footer">API: {API_BASE_LABEL}</div>
         </aside>
 
         <main className="main-content">
+          <div className="main-topbar">
+            <div>
+              <div className="main-title">Care Command Center</div>
+              <div className="main-subtitle">Unified monitoring, assignment, and escalations</div>
+            </div>
+            <div className="topbar-actions">
+              <div className="user-pill">{user.role}</div>
+              <button className="logout-btn" onClick={handleLogout}>Logout</button>
+            </div>
+          </div>
+
+          <div className="content-canvas">
           <Routes>
             <Route path="/"           element={<Dashboard />} />
             <Route path="/patients"   element={<Patients />} />
@@ -103,6 +127,7 @@ export default function App() {
             <Route path="/status"     element={<SystemStatus />} />
             <Route path="/audit-logs" element={<AuditLogs />} />
           </Routes>
+          </div>
         </main>
       </div>
     </Router>

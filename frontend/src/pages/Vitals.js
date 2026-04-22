@@ -143,6 +143,7 @@ export default function Vitals() {
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: { labels: { color: '#e2e8f0' } },
       title: {
@@ -170,7 +171,17 @@ export default function Vitals() {
         </p>
       </div>
 
-      <div style={{ display:'flex', gap:12, marginBottom:20, flexWrap:'wrap' }}>
+      <div className="graphic-banner">
+        <div className="banner-title">Signal Intelligence View</div>
+        <div className="banner-subtitle">Vitals trends with anomaly highlighting for fast clinical decisions.</div>
+        <div className="chip-row">
+          <span className="status-chip">Heart Rate</span>
+          <span className="status-chip">SpO2</span>
+          <span className="status-chip">Temperature</span>
+        </div>
+      </div>
+
+      <div className="filter-row">
         <select
           style={{ background:'#1e293b', border:'1px solid #334155', color:'#e2e8f0',
                    borderRadius:8, padding:'8px 12px', fontSize:13 }}
@@ -205,7 +216,7 @@ export default function Vitals() {
       {showChart && vitals.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
           <div className="card-header"><h2>📈 Vitals Trend</h2></div>
-          <div style={{ height: 320, padding: '0 16px 16px' }}>
+              <div className="chart-3d-shell" style={{ height: 320, padding: '8px 16px 16px', margin: '0 16px 16px' }}>
             <Line data={chartData} options={chartOptions} />
           </div>
         </div>

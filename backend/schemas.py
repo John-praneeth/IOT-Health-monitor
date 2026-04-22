@@ -359,6 +359,43 @@ class HealthCheckOut(BaseModel):
     whatsapp: Optional[HealthDetail] = None
 
 
+# ── Runtime / Maintenance Controls ───────────────────────────────────────────
+class FakeVitalsControlOut(BaseModel):
+    enabled: bool
+
+
+class FakeVitalsControlActionOut(BaseModel):
+    detail: str
+    enabled: bool
+
+
+class VitalsCleanupRequest(BaseModel):
+    mode: str = Field(..., pattern=r"^(last_24h|last_7d|last_30d|before_datetime|all)$")
+    before_datetime: Optional[datetime] = None
+    source: str = Field(default="all", pattern=r"^(all|fake|thingspeak)$")
+
+
+class VitalsCleanupResultOut(BaseModel):
+    detail: str
+    deleted_vitals: int
+    deleted_alerts: int
+    deleted_escalations: int
+    deleted_notifications: int
+    deleted_whatsapp_logs: int
+    deleted_sla_records: int
+
+
+class FreshResetResultOut(BaseModel):
+    detail: str
+    deleted_users: int
+    deleted_patients: int
+    deleted_doctors: int
+    deleted_nurses: int
+    deleted_hospitals: int
+    deleted_vitals: int
+    deleted_alerts: int
+
+
 # ── Pagination Meta ───────────────────────────────────────────────────────────
 class PaginationParams(BaseModel):
     limit: int = 50

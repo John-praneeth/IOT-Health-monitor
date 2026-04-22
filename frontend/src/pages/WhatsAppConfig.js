@@ -127,6 +127,16 @@ export default function WhatsAppConfig() {
         <p>Manage WhatsApp alert notifications for doctors and nurses</p>
       </div>
 
+      <div className="graphic-banner">
+        <div className="banner-title">Messaging Orchestration Center</div>
+        <div className="banner-subtitle">Control alert fanout, delivery state, and contact graph quality.</div>
+        <div className="chip-row">
+          <span className="status-chip">GREEN-API</span>
+          <span className="status-chip">Recipient Sync</span>
+          <span className="status-chip">Emergency Broadcast</span>
+        </div>
+      </div>
+
       {error && (
         <div style={{
           background: 'rgba(239,68,68,0.15)',
@@ -226,12 +236,10 @@ export default function WhatsAppConfig() {
       )}
 
       {/* Recipients — auto-populated from registered doctors & nurses */}
-      <div style={{
-        background: 'rgba(255,255,255,0.05)',
+      <div className="card" style={{
         borderRadius: 12,
         padding: 20,
         marginBottom: 24,
-        border: '1px solid rgba(255,255,255,0.1)',
       }}>
         <h3 style={{ color: '#e2e8f0', marginBottom: 4, fontSize: 15 }}>📋 Alert Recipients</h3>
         <p style={{ color: '#64748b', fontSize: 12, marginBottom: 16 }}>
@@ -268,7 +276,7 @@ export default function WhatsAppConfig() {
           </div>
         ) : (
           <div style={{ color: '#64748b', textAlign: 'center', padding: 30 }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>�</div>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
             <div>No recipients yet.</div>
             <div style={{ fontSize: 12, marginTop: 6 }}>
               Register doctors or nurses with phone numbers and they will appear here automatically.
@@ -277,12 +285,10 @@ export default function WhatsAppConfig() {
         )}
       </div>
 
-      <div style={{
-        background: 'rgba(255,255,255,0.05)',
+      <div className="card" style={{
         borderRadius: 12,
         padding: 20,
         marginBottom: 24,
-        border: '1px solid rgba(255,255,255,0.1)',
       }}>
         <h3 style={{ color: '#e2e8f0', marginBottom: 8, fontSize: 15 }}>🛠️ Manual Recipients</h3>
         <p style={{ color: '#64748b', fontSize: 12, marginBottom: 14 }}>
