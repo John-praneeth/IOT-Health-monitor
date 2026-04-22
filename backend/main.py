@@ -2067,30 +2067,42 @@ def fresh_reset_domain_data(
     current_user: models.User = Depends(auth.require_role("ADMIN")),
     db: Session = Depends(get_db),
 ):
-    # Delete alert-related dependent rows first to satisfy foreign keys.
-    alert_ids = [row[0] for row in db.query(models.Alert.alert_id).all()]
-    if alert_ids:
-        db.query(models.AlertEscalation).filter(models.AlertEscalation.alert_id.in_(alert_ids)).delete(synchronize_session=False)
-        db.query(models.AlertNotification).filter(models.AlertNotification.alert_id.in_(alert_ids)).delete(synchronize_session=False)
-        db.query(models.WhatsAppLog).filter(models.WhatsAppLog.alert_id.in_(alert_ids)).delete(synchronize_session=False)
+    deleted_users = db.query(models.User).filter(models.User.role != "ADMIN").count()
+    deleted_patients = db.query(models.Patient).count()
+    deleted_doctors = db.query(models.Doctor).count()
+    deleted_nurses = db.query(models.Nurse).count()
+    deleted_hospitals = db.query(models.Hospital).count()
+    deleted_vitals = db.query(models.Vitals).count()
+    deleted_alerts = db.query(models.Alert).count()
 
-    deleted_sla_records = db.query(models.SLARecord).delete(synchronize_session=False)
-    _ = deleted_sla_records
-    deleted_alerts = db.query(models.Alert).delete(synchronize_session=False)
-    deleted_vitals = db.query(models.Vitals).delete(synchronize_session=False)
-    db.query(models.ChatMessage).delete(synchronize_session=False)
-    db.query(models.PasswordResetToken).delete(synchronize_session=False)
-
-    deleted_users = db.query(models.User).filter(models.User.role != "ADMIN").delete(synchronize_session=False)
+    # Keep admin accounts but detach them from domain entities.
     db.query(models.User).filter(models.User.role == "ADMIN").update(
         {"doctor_id": None, "nurse_id": None},
         synchronize_session=False,
     )
+    db.query(models.User).filter(models.User.role != "ADMIN").delete(synchronize_session=False)
 
-    deleted_patients = db.query(models.Patient).delete(synchronize_session=False)
-    deleted_doctors = db.query(models.Doctor).delete(synchronize_session=False)
-    deleted_nurses = db.query(models.Nurse).delete(synchronize_session=False)
-    deleted_hospitals = db.query(models.Hospital).delete(synchronize_session=False)
+    # Truncate domain/runtime tables in one shot to avoid FK delete-order issues.
+    db.execute(
+        text(
+            """
+            TRUNCATE TABLE
+                alert_escalations,
+                alert_notifications,
+                whatsapp_logs,
+                sla_records,
+                alerts,
+                vitals,
+                chat_messages,
+                password_reset_tokens,
+                patients,
+                doctors,
+                nurses,
+                hospitals
+            RESTART IDENTITY CASCADE
+            """
+        )
+    )
 
     db.commit()
     _set_setting_bool(db, FAKE_VITALS_ENABLED_SETTING_KEY, False)
