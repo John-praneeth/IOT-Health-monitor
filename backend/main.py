@@ -2012,14 +2012,15 @@ def cleanup_vitals(
             raise HTTPException(status_code=400, detail="before_datetime is required for mode=before_datetime")
         cutoff = payload.before_datetime
 
-    vitals_q = db.query(models.Vitals)
+    vitals_q = db.query(models.Vitals.vital_id)
     if payload.source in {"fake", "thingspeak"}:
         vitals_q = vitals_q.filter(models.Vitals.source == payload.source)
     if cutoff is not None:
         vitals_q = vitals_q.filter(models.Vitals.timestamp <= cutoff)
 
-    vital_ids = [row[0] for row in vitals_q.with_entities(models.Vitals.vital_id).all()]
-    if not vital_ids:
+    vitals_subq = vitals_q.subquery()
+    has_vitals = db.query(vitals_subq.c.vital_id).first()
+    if not has_vitals:
         return {
             "detail": "No vitals matched cleanup filters",
             "deleted_vitals": 0,
@@ -2030,24 +2031,36 @@ def cleanup_vitals(
             "deleted_sla_records": 0,
         }
 
-    alert_ids = [
-        row[0]
-        for row in db.query(models.Alert.alert_id)
-        .filter(models.Alert.vital_id.in_(vital_ids))
-        .all()
-    ]
+    alerts_q = db.query(models.Alert.alert_id).filter(
+        models.Alert.vital_id.in_(db.query(vitals_subq.c.vital_id))
+    )
+    alerts_subq = alerts_q.subquery()
 
     deleted_escalations = 0
     deleted_notifications = 0
     deleted_whatsapp_logs = 0
-    if alert_ids:
-        deleted_escalations = db.query(models.AlertEscalation).filter(models.AlertEscalation.alert_id.in_(alert_ids)).delete(synchronize_session=False)
-        deleted_notifications = db.query(models.AlertNotification).filter(models.AlertNotification.alert_id.in_(alert_ids)).delete(synchronize_session=False)
-        deleted_whatsapp_logs = db.query(models.WhatsAppLog).filter(models.WhatsAppLog.alert_id.in_(alert_ids)).delete(synchronize_session=False)
+    has_alerts = db.query(alerts_subq.c.alert_id).first()
+    if has_alerts:
+        alert_id_query = db.query(alerts_subq.c.alert_id)
+        deleted_escalations = db.query(models.AlertEscalation).filter(
+            models.AlertEscalation.alert_id.in_(alert_id_query)
+        ).delete(synchronize_session=False)
+        deleted_notifications = db.query(models.AlertNotification).filter(
+            models.AlertNotification.alert_id.in_(alert_id_query)
+        ).delete(synchronize_session=False)
+        deleted_whatsapp_logs = db.query(models.WhatsAppLog).filter(
+            models.WhatsAppLog.alert_id.in_(alert_id_query)
+        ).delete(synchronize_session=False)
 
-    deleted_sla_records = db.query(models.SLARecord).filter(models.SLARecord.alert_id.in_(alert_ids or [-1])).delete(synchronize_session=False)
-    deleted_alerts = db.query(models.Alert).filter(models.Alert.vital_id.in_(vital_ids)).delete(synchronize_session=False)
-    deleted_vitals = db.query(models.Vitals).filter(models.Vitals.vital_id.in_(vital_ids)).delete(synchronize_session=False)
+    deleted_sla_records = db.query(models.SLARecord).filter(
+        models.SLARecord.alert_id.in_(db.query(alerts_subq.c.alert_id))
+    ).delete(synchronize_session=False)
+    deleted_alerts = db.query(models.Alert).filter(
+        models.Alert.alert_id.in_(db.query(alerts_subq.c.alert_id))
+    ).delete(synchronize_session=False)
+    deleted_vitals = db.query(models.Vitals).filter(
+        models.Vitals.vital_id.in_(db.query(vitals_subq.c.vital_id))
+    ).delete(synchronize_session=False)
     db.commit()
 
     crud.write_audit(db, "DELETE", "vitals_cleanup", user_id=current_user.user_id)
@@ -2082,27 +2095,42 @@ def fresh_reset_domain_data(
     )
     db.query(models.User).filter(models.User.role != "ADMIN").delete(synchronize_session=False)
 
-    # Truncate domain/runtime tables in one shot to avoid FK delete-order issues.
-    db.execute(
-        text(
-            """
-            TRUNCATE TABLE
-                alert_escalations,
-                alert_notifications,
-                whatsapp_logs,
-                sla_records,
-                alerts,
-                vitals,
-                chat_messages,
-                password_reset_tokens,
-                patients,
-                doctors,
-                nurses,
-                hospitals
-            RESTART IDENTITY CASCADE
-            """
+    if db.bind and db.bind.dialect.name == "postgresql":
+        # Truncate domain/runtime tables in one shot to avoid FK delete-order issues.
+        db.execute(
+            text(
+                """
+                TRUNCATE TABLE
+                    alert_escalations,
+                    alert_notifications,
+                    whatsapp_logs,
+                    sla_records,
+                    alerts,
+                    vitals,
+                    chat_messages,
+                    password_reset_tokens,
+                    patients,
+                    doctors,
+                    nurses,
+                    hospitals
+                RESTART IDENTITY CASCADE
+                """
+            )
         )
-    )
+    else:
+        # Portable fallback for sqlite/other engines used in local tests.
+        db.query(models.AlertEscalation).delete(synchronize_session=False)
+        db.query(models.AlertNotification).delete(synchronize_session=False)
+        db.query(models.WhatsAppLog).delete(synchronize_session=False)
+        db.query(models.SLARecord).delete(synchronize_session=False)
+        db.query(models.Alert).delete(synchronize_session=False)
+        db.query(models.Vitals).delete(synchronize_session=False)
+        db.query(models.ChatMessage).delete(synchronize_session=False)
+        db.query(models.PasswordResetToken).delete(synchronize_session=False)
+        db.query(models.Patient).delete(synchronize_session=False)
+        db.query(models.Doctor).delete(synchronize_session=False)
+        db.query(models.Nurse).delete(synchronize_session=False)
+        db.query(models.Hospital).delete(synchronize_session=False)
 
     db.commit()
     _set_setting_bool(db, FAKE_VITALS_ENABLED_SETTING_KEY, False)
