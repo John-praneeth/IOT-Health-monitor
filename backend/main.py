@@ -2081,12 +2081,12 @@ def fresh_reset_domain_data(
     db.query(models.ChatMessage).delete(synchronize_session=False)
     db.query(models.PasswordResetToken).delete(synchronize_session=False)
 
+    deleted_users = db.query(models.User).filter(models.User.role != "ADMIN").delete(synchronize_session=False)
+
     deleted_patients = db.query(models.Patient).delete(synchronize_session=False)
     deleted_doctors = db.query(models.Doctor).delete(synchronize_session=False)
     deleted_nurses = db.query(models.Nurse).delete(synchronize_session=False)
     deleted_hospitals = db.query(models.Hospital).delete(synchronize_session=False)
-
-    deleted_users = db.query(models.User).filter(models.User.role != "ADMIN").delete(synchronize_session=False)
 
     db.commit()
     _set_setting_bool(db, FAKE_VITALS_ENABLED_SETTING_KEY, False)
