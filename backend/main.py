@@ -2082,6 +2082,10 @@ def fresh_reset_domain_data(
     db.query(models.PasswordResetToken).delete(synchronize_session=False)
 
     deleted_users = db.query(models.User).filter(models.User.role != "ADMIN").delete(synchronize_session=False)
+    db.query(models.User).filter(models.User.role == "ADMIN").update(
+        {"doctor_id": None, "nurse_id": None},
+        synchronize_session=False,
+    )
 
     deleted_patients = db.query(models.Patient).delete(synchronize_session=False)
     deleted_doctors = db.query(models.Doctor).delete(synchronize_session=False)
