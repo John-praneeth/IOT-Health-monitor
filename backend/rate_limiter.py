@@ -19,6 +19,21 @@ logger = logging.getLogger(__name__)
 # ── Limiter instance ──────────────────────────────────────────────────────────
 # Uses Redis if REDIS_URL is set and reachable, otherwise in-memory
 REDIS_URL = os.getenv("REDIS_URL", "")
+REDIS_CONNECT_TIMEOUT = float(os.getenv("REDIS_CONNECT_TIMEOUT", "1.0"))
+REDIS_SOCKET_TIMEOUT = float(os.getenv("REDIS_SOCKET_TIMEOUT", "1.0"))
+
+
+def _limiter_redis_url() -> str:
+    """Inject socket timeouts into Redis URL so limiter does not block requests."""
+    if not REDIS_URL:
+        return ""
+    separator = "&" if "?" in REDIS_URL else "?"
+    return (
+        f"{REDIS_URL}{separator}"
+        f"socket_connect_timeout={REDIS_CONNECT_TIMEOUT}&"
+        f"socket_timeout={REDIS_SOCKET_TIMEOUT}&"
+        "retry_on_timeout=False"
+    )
 
 
 def _get_storage_uri() -> str:
@@ -26,10 +41,16 @@ def _get_storage_uri() -> str:
     if REDIS_URL:
         try:
             import redis as _redis
-            r = _redis.from_url(REDIS_URL, socket_connect_timeout=2)
+            tuned_url = _limiter_redis_url()
+            r = _redis.from_url(
+                tuned_url,
+                socket_connect_timeout=REDIS_CONNECT_TIMEOUT,
+                socket_timeout=REDIS_SOCKET_TIMEOUT,
+                retry_on_timeout=False,
+            )
             r.ping()
             logger.info("Rate limiter using Redis: %s", REDIS_URL)
-            return REDIS_URL
+            return tuned_url
         except Exception as e:
             logger.warning("Rate limiter Redis unavailable (%s) — falling back to in-memory", e)
     return "memory://"

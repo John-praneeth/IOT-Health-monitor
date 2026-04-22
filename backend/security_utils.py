@@ -5,6 +5,7 @@ security_utils.py - Shared runtime abuse-protection helpers.
 from __future__ import annotations
 
 import time
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 import os
@@ -28,6 +29,7 @@ _sessions: dict[int, list[dict]] = defaultdict(list)
 _refresh_user_by_jti: dict[str, int] = {}
 _anomaly_ip_history: dict[int, list[tuple[str, float]]] = defaultdict(list)
 _refresh_history: dict[int, list[float]] = defaultdict(list)
+logger = logging.getLogger(__name__)
 
 
 def _cleanup_memory_state() -> None:
@@ -113,7 +115,10 @@ def _track_anomaly(user_id: int, ip: str) -> list[str]:
 def is_ip_blocked(ip: str) -> bool:
     r = get_redis_client()
     if r:
-        return bool(r.exists(_redis_key_blocked(ip)))
+        try:
+            return bool(r.exists(_redis_key_blocked(ip)))
+        except Exception as exc:
+            logger.warning("Redis failure in is_ip_blocked; using in-memory fallback: %s", exc)
 
     _cleanup_memory_state()
     return ip in _blocked_ips
@@ -122,14 +127,17 @@ def is_ip_blocked(ip: str) -> bool:
 def register_failed_login(ip: str) -> int:
     r = get_redis_client()
     if r:
-        failed_key = _redis_key_failed(ip)
-        blocked_key = _redis_key_blocked(ip)
-        attempts = int(r.incr(failed_key))
-        r.expire(failed_key, FAILED_LOGIN_BLOCK_SECONDS)
-        if attempts >= FAILED_LOGIN_THRESHOLD:
-            r.set(blocked_key, "1", ex=FAILED_LOGIN_BLOCK_SECONDS)
-            r.delete(failed_key)
-        return attempts
+        try:
+            failed_key = _redis_key_failed(ip)
+            blocked_key = _redis_key_blocked(ip)
+            attempts = int(r.incr(failed_key))
+            r.expire(failed_key, FAILED_LOGIN_BLOCK_SECONDS)
+            if attempts >= FAILED_LOGIN_THRESHOLD:
+                r.set(blocked_key, "1", ex=FAILED_LOGIN_BLOCK_SECONDS)
+                r.delete(failed_key)
+            return attempts
+        except Exception as exc:
+            logger.warning("Redis failure in register_failed_login; using in-memory fallback: %s", exc)
 
     _cleanup_memory_state()
     now = time.time()
@@ -146,8 +154,11 @@ def register_failed_login(ip: str) -> int:
 def reset_failed_login(ip: str) -> None:
     r = get_redis_client()
     if r:
-        r.delete(_redis_key_failed(ip))
-        return
+        try:
+            r.delete(_redis_key_failed(ip))
+            return
+        except Exception as exc:
+            logger.warning("Redis failure in reset_failed_login; using in-memory fallback: %s", exc)
 
     _failed_attempts.pop(ip, None)
     _failed_attempt_ttl.pop(ip, None)
@@ -183,48 +194,51 @@ def bind_refresh_session(
 
     r = get_redis_client()
     if r:
-        refresh_key = _redis_refresh_key(user_id)
-        r.hset(
-            refresh_key,
-            mapping={
-                "jti": refresh_jti,
-                "ip": ip_address,
-                "ua": ua,
-                "exp": int(expires_ts),
-            },
-        )
-        r.expire(refresh_key, max(1, int(expires_ts - time.time())))
+        try:
+            refresh_key = _redis_refresh_key(user_id)
+            r.hset(
+                refresh_key,
+                mapping={
+                    "jti": refresh_jti,
+                    "ip": ip_address,
+                    "ua": ua,
+                    "exp": int(expires_ts),
+                },
+            )
+            r.expire(refresh_key, max(1, int(expires_ts - time.time())))
 
-        sess_key = _redis_session_key(user_id)
-        r.zadd(sess_key, {refresh_jti: issued_at})
-        r.expire(sess_key, max(1, int(expires_ts - time.time())))
-        r.hset(
-            _redis_session_meta_key(refresh_jti),
-            mapping={
-                "user_id": user_id,
-                "ip": ip_address,
-                "ua": ua,
-                "access_jti": access_jti,
-                "exp": int(expires_ts),
-            },
-        )
-        r.expire(_redis_session_meta_key(refresh_jti), max(1, int(expires_ts - time.time())))
-        r.set(_redis_refresh_user_key(refresh_jti), str(user_id), ex=max(1, int(expires_ts - time.time())))
+            sess_key = _redis_session_key(user_id)
+            r.zadd(sess_key, {refresh_jti: issued_at})
+            r.expire(sess_key, max(1, int(expires_ts - time.time())))
+            r.hset(
+                _redis_session_meta_key(refresh_jti),
+                mapping={
+                    "user_id": user_id,
+                    "ip": ip_address,
+                    "ua": ua,
+                    "access_jti": access_jti,
+                    "exp": int(expires_ts),
+                },
+            )
+            r.expire(_redis_session_meta_key(refresh_jti), max(1, int(expires_ts - time.time())))
+            r.set(_redis_refresh_user_key(refresh_jti), str(user_id), ex=max(1, int(expires_ts - time.time())))
 
-        session_count = int(r.zcard(sess_key))
-        if session_count > MAX_SESSIONS_PER_USER:
-            overflow = session_count - MAX_SESSIONS_PER_USER
-            oldest = r.zrange(sess_key, 0, overflow - 1)
-            for old in oldest:
-                old_jti = old.decode() if isinstance(old, bytes) else str(old)
-                revoked_jtis.append(old_jti)
-                old_meta = _decode_hash(r.hgetall(_redis_session_meta_key(old_jti)))
-                if old_meta.get("access_jti"):
-                    revoked_jtis.append(old_meta["access_jti"])
-                r.zrem(sess_key, old_jti)
-                r.delete(_redis_session_meta_key(old_jti))
-                r.delete(_redis_refresh_user_key(old_jti))
-        return revoked_jtis
+            session_count = int(r.zcard(sess_key))
+            if session_count > MAX_SESSIONS_PER_USER:
+                overflow = session_count - MAX_SESSIONS_PER_USER
+                oldest = r.zrange(sess_key, 0, overflow - 1)
+                for old in oldest:
+                    old_jti = old.decode() if isinstance(old, bytes) else str(old)
+                    revoked_jtis.append(old_jti)
+                    old_meta = _decode_hash(r.hgetall(_redis_session_meta_key(old_jti)))
+                    if old_meta.get("access_jti"):
+                        revoked_jtis.append(old_meta["access_jti"])
+                    r.zrem(sess_key, old_jti)
+                    r.delete(_redis_session_meta_key(old_jti))
+                    r.delete(_redis_refresh_user_key(old_jti))
+            return revoked_jtis
+        except Exception as exc:
+            logger.warning("Redis failure in bind_refresh_session; using in-memory fallback: %s", exc)
 
     _refresh_state[user_id] = {
         "jti": refresh_jti,

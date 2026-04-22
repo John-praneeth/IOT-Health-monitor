@@ -3,6 +3,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 import sys
 import logging
+import time
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -34,9 +35,13 @@ Base = declarative_base()
 # ── Redis Safe Mode ──────────────────────────────────────────────────────────
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 REDIS_REQUIRED = os.getenv("REDIS_REQUIRED", "false").lower() in ("true", "1", "yes")
+REDIS_CONNECT_TIMEOUT = float(os.getenv("REDIS_CONNECT_TIMEOUT", "1.0"))
+REDIS_SOCKET_TIMEOUT = float(os.getenv("REDIS_SOCKET_TIMEOUT", "1.0"))
 
 _redis_available = False
 _redis_client = None
+_redis_last_check_at = 0.0
+_redis_recheck_interval = float(os.getenv("REDIS_RECHECK_INTERVAL_SECONDS", "5.0"))
 
 
 def check_redis() -> bool:
@@ -44,7 +49,13 @@ def check_redis() -> bool:
     global _redis_available, _redis_client
     try:
         import redis as _redis
-        r = _redis.from_url(REDIS_URL, socket_connect_timeout=2)
+        r = _redis.from_url(
+            REDIS_URL,
+            socket_connect_timeout=REDIS_CONNECT_TIMEOUT,
+            socket_timeout=REDIS_SOCKET_TIMEOUT,
+            retry_on_timeout=False,
+            health_check_interval=30,
+        )
         r.ping()
         _redis_available = True
         _redis_client = r
@@ -62,13 +73,20 @@ def check_redis() -> bool:
 
 def get_redis_client():
     """Get Redis client if available, otherwise None."""
-    global _redis_client
+    global _redis_client, _redis_available, _redis_last_check_at
     if _redis_client is not None:
         try:
             _redis_client.ping()
             return _redis_client
         except Exception:
             _redis_client = None
+            _redis_available = False
+            _redis_last_check_at = time.time()
+            return None
+    now = time.time()
+    if now - _redis_last_check_at < _redis_recheck_interval:
+        return None
+    _redis_last_check_at = now
     check_redis()
     return _redis_client
 

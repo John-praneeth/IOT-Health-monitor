@@ -411,7 +411,14 @@ def register_nurse(body: schemas.NurseSelfRegister, response: Response, request:
 @app.post("/auth/login", response_model=schemas.TokenResponse, tags=["Auth"])
 @limiter.limit(LOGIN_LIMIT)
 def login(body: schemas.LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    t0 = time.perf_counter()
+    stage_marks = {"start": t0}
+
+    def _mark(label: str) -> None:
+        stage_marks[label] = time.perf_counter()
+
     client_ip = request_ip(request)
+    _mark("client_ip")
     if is_ip_blocked(client_ip):
         log_security_event(
             "BRUTE_FORCE_BLOCKED",
@@ -420,8 +427,10 @@ def login(body: schemas.LoginRequest, request: Request, response: Response, db: 
             block_seconds=FAILED_LOGIN_BLOCK_SECONDS,
         )
         raise HTTPException(status_code=429, detail="Too many failed login attempts. Try again later.")
+    _mark("ip_block_check")
 
     user = auth.get_user_by_username(db, body.username)
+    _mark("user_lookup")
     if not user or not auth.verify_password(body.password, user.password_hash):
         attempts = register_failed_login(client_ip)
         log_security_event(
@@ -431,11 +440,15 @@ def login(body: schemas.LoginRequest, request: Request, response: Response, db: 
             attempts=attempts,
         )
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    _mark("password_verify")
 
     reset_failed_login(client_ip)
+    _mark("failed_login_reset")
     token, refresh_token = auth.issue_token_pair(user)
+    _mark("issue_token_pair")
     access_payload = auth.decode_token(token, expected_type="access")
     refresh_payload = auth.decode_token(refresh_token, expected_type="refresh")
+    _mark("decode_tokens")
     revoked = bind_refresh_session(
         user.user_id,
         refresh_jti=refresh_payload["jti"],
@@ -444,12 +457,35 @@ def login(body: schemas.LoginRequest, request: Request, response: Response, db: 
         user_agent=request.headers.get("user-agent", ""),
         expires_at=refresh_payload["exp"],
     )
+    _mark("bind_refresh")
     for jti in revoked:
         auth.revoke_token_jti(jti, refresh_payload["exp"])
+    _mark("revoke_old_tokens")
     _set_refresh_cookie(response, refresh_token)
     crud.write_audit(db, "LOGIN", "user", entity_id=user.user_id, user_id=user.user_id)
+    _mark("audit_write")
     logger.info("User logged in: %s (role: %s)", user.username, user.role,
                 extra={"action": "login_success"})
+
+    total = stage_marks["audit_write"] - t0
+    if total >= 1.5:
+        logger.warning(
+            "Slow login detected for user=%s ip=%s total=%.3fs timings=%s",
+            body.username,
+            client_ip,
+            total,
+            {
+                "ip_check": round(stage_marks["ip_block_check"] - stage_marks["client_ip"], 3),
+                "user_lookup": round(stage_marks["user_lookup"] - stage_marks["ip_block_check"], 3),
+                "password_verify": round(stage_marks["password_verify"] - stage_marks["user_lookup"], 3),
+                "failed_reset": round(stage_marks["failed_login_reset"] - stage_marks["password_verify"], 3),
+                "issue_tokens": round(stage_marks["issue_token_pair"] - stage_marks["failed_login_reset"], 3),
+                "decode_tokens": round(stage_marks["decode_tokens"] - stage_marks["issue_token_pair"], 3),
+                "bind_refresh": round(stage_marks["bind_refresh"] - stage_marks["decode_tokens"], 3),
+                "revoke_old": round(stage_marks["revoke_old_tokens"] - stage_marks["bind_refresh"], 3),
+                "audit_write": round(stage_marks["audit_write"] - stage_marks["revoke_old_tokens"], 3),
+            },
+        )
 
     return schemas.TokenResponse(
         access_token=token, role=user.role, username=user.username,
