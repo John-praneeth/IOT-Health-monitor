@@ -578,6 +578,58 @@ tr:hover td {
   align-items: center;
 }
 
+.ops-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ops-card {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 193, 224, 0.26);
+  background: linear-gradient(170deg, rgba(10, 34, 50, 0.86), rgba(8, 25, 38, 0.92));
+  padding: 14px;
+}
+
+.ops-card-danger {
+  margin-top: 12px;
+  border-color: rgba(248, 113, 113, 0.38);
+  background: linear-gradient(170deg, rgba(73, 15, 23, 0.68), rgba(52, 12, 18, 0.78));
+}
+
+.ops-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ops-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ops-msg {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+.ops-msg-success {
+  color: #a7f3d0;
+  background: rgba(6, 78, 59, 0.4);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.ops-msg-error {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.36);
+  border: 1px solid rgba(248, 113, 113, 0.36);
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -830,6 +882,14 @@ tr:hover td {
   }
 
   .graph-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-form-grid {
     grid-template-columns: 1fr;
   }
 }
