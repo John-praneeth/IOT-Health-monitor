@@ -27,7 +27,7 @@ import schemas
 import whatsapp_notifier
 from database import engine, Base, SessionLocal, require_redis_on_startup, get_redis_client, is_redis_available
 from json_logger import setup_logging, request_id_var, generate_request_id
-from rate_limiter import limiter, setup_rate_limiter, LOGIN_LIMIT
+from rate_limiter import limiter, setup_rate_limiter
 from exception_handlers import setup_exception_handlers
 from logger import log_security_event, request_ip, sanitize_headers
 from security_utils import (
@@ -409,7 +409,6 @@ def register_nurse(body: schemas.NurseSelfRegister, response: Response, request:
 
 
 @app.post("/auth/login", response_model=schemas.TokenResponse, tags=["Auth"])
-@limiter.limit(LOGIN_LIMIT)
 def login(body: schemas.LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     t0 = time.perf_counter()
     stage_marks = {"start": t0}
