@@ -21,12 +21,28 @@ if not DATABASE_URL:
         "Create a backend/.env file with: DATABASE_URL=postgresql://user:pass@localhost:5432/patient_monitor"
     )
 
+db_connect_args: dict[str, object] = {}
+if DATABASE_URL.startswith("postgresql"):
+    connect_timeout = int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5"))
+    statement_timeout_ms = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "15000"))
+    lock_timeout_ms = int(os.getenv("DB_LOCK_TIMEOUT_MS", "3000"))
+    idle_tx_timeout_ms = int(os.getenv("DB_IDLE_TX_TIMEOUT_MS", "30000"))
+    db_connect_args = {
+        "connect_timeout": connect_timeout,
+        "options": (
+            f"-c statement_timeout={statement_timeout_ms} "
+            f"-c lock_timeout={lock_timeout_ms} "
+            f"-c idle_in_transaction_session_timeout={idle_tx_timeout_ms}"
+        ),
+    }
+
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,          # verify connections before use
     pool_size=5,
     max_overflow=10,
-    connect_args={"connect_timeout": 5},  # fail fast if DB unreachable
+    pool_timeout=int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "10")),
+    connect_args=db_connect_args,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
