@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from jose import JWTError, ExpiredSignatureError, jwt
 
 import auth
@@ -2123,6 +2124,10 @@ def fresh_reset_domain_data(
     deleted_vitals = db.query(models.Vitals).count()
     deleted_alerts = db.query(models.Alert).count()
 
+    # Stop new fake data generation first to reduce lock contention while wiping.
+    _set_setting_bool(db, FAKE_VITALS_ENABLED_SETTING_KEY, False)
+    db.commit()
+
     # Keep admin accounts but detach them from domain entities.
     db.query(models.User).filter(models.User.role == "ADMIN").update(
         {"doctor_id": None, "nurse_id": None},
@@ -2130,30 +2135,58 @@ def fresh_reset_domain_data(
     )
     db.query(models.User).filter(models.User.role != "ADMIN").delete(synchronize_session=False)
 
+    used_truncate = False
     if db.bind and db.bind.dialect.name == "postgresql":
-        # Truncate domain/runtime tables in one shot to avoid FK delete-order issues.
-        db.execute(
-            text(
-                """
-                TRUNCATE TABLE
-                    alert_escalations,
-                    alert_notifications,
-                    whatsapp_logs,
-                    sla_records,
-                    alerts,
-                    vitals,
-                    chat_messages,
-                    password_reset_tokens,
-                    patients,
-                    doctors,
-                    nurses,
-                    hospitals
-                RESTART IDENTITY CASCADE
-                """
-            )
-        )
-    else:
-        # Portable fallback for sqlite/other engines used in local tests.
+        # Try TRUNCATE first, but fail fast on lock waits and fallback to ordered DELETE.
+        for attempt in range(3):
+            try:
+                db.execute(text("SET LOCAL lock_timeout = '3s'"))
+                db.execute(
+                    text(
+                        """
+                        TRUNCATE TABLE
+                            alert_escalations,
+                            alert_notifications,
+                            whatsapp_logs,
+                            sla_records,
+                            alerts,
+                            vitals,
+                            chat_messages,
+                            password_reset_tokens,
+                            patients,
+                            doctors,
+                            nurses,
+                            hospitals
+                        RESTART IDENTITY CASCADE
+                        """
+                    )
+                )
+                used_truncate = True
+                break
+            except SQLAlchemyError as exc:
+                err_text = str(exc).lower()
+                lock_wait = "lock timeout" in err_text or "canceling statement due to lock timeout" in err_text
+                if lock_wait and attempt < 2:
+                    logger.warning("fresh_reset truncate lock timeout (attempt %s), retrying", attempt + 1)
+                    db.rollback()
+                    # Re-apply user cleanup in this new transaction before retry.
+                    db.query(models.User).filter(models.User.role == "ADMIN").update(
+                        {"doctor_id": None, "nurse_id": None},
+                        synchronize_session=False,
+                    )
+                    db.query(models.User).filter(models.User.role != "ADMIN").delete(synchronize_session=False)
+                    continue
+                logger.warning("fresh_reset truncate unavailable, falling back to ordered delete: %s", exc)
+                db.rollback()
+                db.query(models.User).filter(models.User.role == "ADMIN").update(
+                    {"doctor_id": None, "nurse_id": None},
+                    synchronize_session=False,
+                )
+                db.query(models.User).filter(models.User.role != "ADMIN").delete(synchronize_session=False)
+                break
+
+    if not used_truncate:
+        # Portable fallback for sqlite/other engines, and Postgres lock-contention cases.
         db.query(models.AlertEscalation).delete(synchronize_session=False)
         db.query(models.AlertNotification).delete(synchronize_session=False)
         db.query(models.WhatsAppLog).delete(synchronize_session=False)
@@ -2168,7 +2201,6 @@ def fresh_reset_domain_data(
         db.query(models.Hospital).delete(synchronize_session=False)
 
     db.commit()
-    _set_setting_bool(db, FAKE_VITALS_ENABLED_SETTING_KEY, False)
     crud.write_audit(db, "DELETE", "fresh_reset", user_id=current_user.user_id)
 
     return {
