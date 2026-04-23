@@ -62,6 +62,16 @@ export default function Login({ onLogin }) {
     getHospitals().then(r => setHospitals(r.data)).catch(() => {});
   }, []);
 
+  const humanizeApiError = (err, fallback) => {
+    if (err?.code === 'ECONNABORTED') {
+      return 'Request timed out. Please try again in a few seconds.';
+    }
+    if (!err?.response) {
+      return 'Network error. Check your connection and try again.';
+    }
+    return err.response?.data?.detail || fallback;
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError(''); setLoading(true);
@@ -69,7 +79,7 @@ export default function Login({ onLogin }) {
       const res = await login(loginForm);
       onLogin(res.data);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed');
+      setError(humanizeApiError(err, 'Login failed'));
     } finally { setLoading(false); }
   };
 
@@ -86,7 +96,7 @@ export default function Login({ onLogin }) {
       const res = await registerDoctor(payload);
       onLogin(res.data);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed');
+      setError(humanizeApiError(err, 'Registration failed'));
     } finally { setLoading(false); }
   };
 
@@ -103,7 +113,7 @@ export default function Login({ onLogin }) {
       const res = await registerNurse(payload);
       onLogin(res.data);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed');
+      setError(humanizeApiError(err, 'Registration failed'));
     } finally { setLoading(false); }
   };
 
@@ -124,7 +134,7 @@ export default function Login({ onLogin }) {
       setResetMsg((res?.data?.detail || 'Verification code sent if account exists.') + codeHint);
       setResetStep('confirm');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Could not send verification code');
+      setError(humanizeApiError(err, 'Could not send verification code'));
     } finally {
       setLoading(false);
     }
@@ -159,7 +169,7 @@ export default function Login({ onLogin }) {
       setLoginForm((prev) => ({ ...prev, username: resetForm.username, password: '' }));
       setResetForm({ username: '', verification_code: '', new_password: '', confirm_password: '' });
     } catch (err) {
-      setError(err.response?.data?.detail || 'Password reset failed');
+      setError(humanizeApiError(err, 'Password reset failed'));
     } finally {
       setLoading(false);
     }

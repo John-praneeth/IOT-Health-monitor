@@ -2,6 +2,7 @@ import axios from 'axios';
 import { API_BASE_URL } from './config';
 
 const API = axios.create({ baseURL: API_BASE_URL });
+const AUTH_TIMEOUT_MS = 15000;
 
 // ── Token interceptor: attach JWT to every request if available ──
 API.interceptors.request.use((config) => {
@@ -34,10 +35,10 @@ API.interceptors.response.use(
 // ── Auth ──────────────────────────────────────────────────
 export const registerDoctor   = (data) => API.post('/auth/register/doctor', data);
 export const registerNurse    = (data) => API.post('/auth/register/nurse', data);
-export const login            = (data) => API.post('/auth/login', data);
+export const login            = (data) => API.post('/auth/login', data, { timeout: AUTH_TIMEOUT_MS });
 export const getMe            = ()     => API.get('/auth/me');
 export const resetPassword    = (data) => API.post('/auth/reset-password', data);
-export const forgotPasswordRequest = (data) => API.post('/auth/forgot-password/request', data);
+export const forgotPasswordRequest = (data) => API.post('/auth/forgot-password/request', data, { timeout: AUTH_TIMEOUT_MS });
 export const forgotPasswordConfirm = (data) => API.post('/auth/forgot-password/confirm', data);
 
 // ── Patients ──────────────────────────────────────────────
