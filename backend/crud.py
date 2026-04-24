@@ -810,6 +810,22 @@ def create_hospital(db: Session, hospital: schemas.HospitalCreate):
     return db_hospital
 
 
+def get_hospital(db: Session, hospital_id: int):
+    return db.query(models.Hospital).filter(models.Hospital.hospital_id == hospital_id).first()
+
+
+def update_hospital(db: Session, hospital_id: int, payload: schemas.HospitalUpdate, user_id: int):
+    hospital = db.query(models.Hospital).filter(models.Hospital.hospital_id == hospital_id).first()
+    if not hospital:
+        return None
+    for field, value in payload.model_dump().items():
+        setattr(hospital, field, value)
+    db.commit()
+    db.refresh(hospital)
+    write_audit(db, "UPDATE", "hospital", entity_id=hospital_id, user_id=user_id)
+    return hospital
+
+
 # ── Dashboard Stats ───────────────────────────────────────────────────────────
 def _duplicate_vitals_count_for_patients(
     db: Session,

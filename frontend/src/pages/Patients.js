@@ -19,7 +19,7 @@ export default function Patients() {
   const [editingPatient, setEditingPatient] = useState(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
 
-  const role = localStorage.getItem('role');
+  const role = (localStorage.getItem('role') || '').toUpperCase();
   const canCreate = role === 'ADMIN' || role === 'DOCTOR';
   const canEdit = role === 'ADMIN' || role === 'DOCTOR' || role === 'NURSE';
   const canAssignDoctor = role === 'ADMIN' || role === 'DOCTOR';
@@ -131,9 +131,15 @@ export default function Patients() {
         name: editForm.name,
         age: Number(editForm.age),
         room_number: editForm.room_number,
-        hospital_id: editForm.hospital_id ? Number(editForm.hospital_id) : null,
-        assigned_doctor: editForm.assigned_doctor ? Number(editForm.assigned_doctor) : null,
-        assigned_nurse: editForm.assigned_nurse ? Number(editForm.assigned_nurse) : null,
+        hospital_id: editForm.hospital_id
+          ? Number(editForm.hospital_id)
+          : (editingPatient.hospital_id ?? null),
+        assigned_doctor: editForm.assigned_doctor
+          ? Number(editForm.assigned_doctor)
+          : (editingPatient.assigned_doctor ?? null),
+        assigned_nurse: editForm.assigned_nurse
+          ? Number(editForm.assigned_nurse)
+          : (editingPatient.assigned_nurse ?? null),
       });
       setEditingPatient(null);
       setEditForm(EMPTY_FORM);

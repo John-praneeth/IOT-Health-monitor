@@ -81,6 +81,7 @@ export const getNursePatients  = (id)        => API.get(`/nurses/${id}/patients`
 // ── Hospitals ─────────────────────────────────────────────
 export const getHospitals  = ()              => API.get('/hospitals');
 export const createHospital= (data)          => API.post('/hospitals', data);
+export const updateHospital= (id, data)      => API.put(`/hospitals/${id}`, data);
 
 // ── Notifications ─────────────────────────────────────────
 export const getMyNotifications = (params={}) => API.get('/notifications/my', { params });

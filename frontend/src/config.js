@@ -4,9 +4,12 @@ const rawWsBase = (process.env.REACT_APP_WS_BASE_URL || '').trim();
 const isVercelProdHost =
   typeof window !== 'undefined' && /(^|\.)iot-healthcare\.vercel\.app$/i.test(window.location.host);
 
+const isLocalDevHost =
+  typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+
 const defaultApiBase = isVercelProdHost
   ? 'https://iot-healthcare-backend.onrender.com'
-  : '/api';
+  : (isLocalDevHost ? 'http://localhost:8000' : '/api');
 
 export const API_BASE_URL = rawApiBase || defaultApiBase;
 

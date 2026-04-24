@@ -179,6 +179,11 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+python - <<'PY'
+import secrets
+print(f"SECRET_KEY={secrets.token_hex(32)}")
+PY
+# Copy the printed SECRET_KEY value into backend/.env
 ```
 
 ### 3) Database seed (admin user)
@@ -479,6 +484,15 @@ docker compose down -v
 docker compose up -d --build
 ```
 
+If local backend startup fails with `RuntimeError: SECRET_KEY is insecure`, regenerate a key and update `backend/.env`:
+
+```bash
+python - <<'PY'
+import secrets
+print(secrets.token_hex(32))
+PY
+```
+
 Use Docker Compose:
 ```bash
 docker compose up -d --build
@@ -519,6 +533,26 @@ curl -sS http://localhost/api/health
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f backend scheduler frontend
+```
+
+Backend container startup contract:
+- `DATABASE_URL` and `SECRET_KEY` are always required.
+- `ADMIN_PASSWORD` is required only for first deployment when no admin user exists.
+- `SEED_DB_ON_STARTUP=true` (default) runs `seed_db.py` during startup.
+- Set `SEED_DB_ON_STARTUP=false` if your platform seeds users via a separate job.
+
+Common backend deployment failures:
+- `SECRET_KEY is insecure`: replace placeholder values with a long random secret.
+- `ADMIN_PASSWORD is required for first deployment`: set `ADMIN_PASSWORD` in your deploy secrets.
+- `DATABASE_URL is not set`: point to your managed PostgreSQL URL.
+
+Generate a strong secret quickly:
+
+```bash
+python - <<'PY'
+import secrets
+print(secrets.token_hex(32))
+PY
 ```
 
 This production mode additionally enables:

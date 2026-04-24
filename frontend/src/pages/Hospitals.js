@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getHospitals, createHospital } from '../api';
+import { getHospitals, createHospital, updateHospital } from '../api';
 
 const COUNTRY_CODES = [
   { code: '91',  label: '🇮🇳 +91' },
@@ -34,10 +34,12 @@ export default function Hospitals() {
   const [form,        setForm]        = useState(EMPTY);
   const [countryCode, setCountryCode] = useState('91');
   const [showAdd,     setShowAdd]     = useState(false);
+  const [editing,     setEditing]     = useState(null);
+  const [editForm,    setEditForm]    = useState(EMPTY);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState('');
 
-  const role = localStorage.getItem('role');
+  const role = (localStorage.getItem('role') || '').toUpperCase();
   const canManage = role === 'ADMIN';
 
   const load = async () => {
@@ -64,6 +66,35 @@ export default function Hospitals() {
       setShowAdd(false);
       load();
     } catch (err) { setError(err.response?.data?.detail || 'Create failed'); }
+  };
+
+  const openEdit = (hospital) => {
+    setEditing(hospital);
+    setEditForm({
+      name: hospital.name || '',
+      location: hospital.location || '',
+      phone: hospital.phone || '',
+      email: hospital.email || '',
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    setError('');
+    try {
+      const cleanPhone = (editForm.phone || '').replace(/[^0-9]/g, '').replace(/^0+/, '');
+      await updateHospital(editing.hospital_id, {
+        name: editForm.name,
+        location: editForm.location,
+        phone: cleanPhone || '',
+        email: editForm.email || '',
+      });
+      setEditing(null);
+      setEditForm(EMPTY);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Update failed');
+    }
   };
 
   return (
@@ -139,12 +170,12 @@ export default function Hospitals() {
           <table>
             <thead>
               <tr>
-                <th>ID</th><th>Name</th><th>Location</th><th>Phone</th><th>Email</th>
+                <th>ID</th><th>Name</th><th>Location</th><th>Phone</th><th>Email</th>{canManage && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {hospitals.length === 0 && (
-                <tr><td colSpan={5} className="empty-state">No hospitals yet.</td></tr>
+                <tr><td colSpan={canManage ? 6 : 5} className="empty-state">No hospitals yet.</td></tr>
               )}
               {hospitals.map(h => (
                 <tr key={h.hospital_id}>
@@ -153,12 +184,35 @@ export default function Hospitals() {
                   <td>{h.location}</td>
                   <td>{formatPhone(h.phone)}</td>
                   <td>{h.email || '—'}</td>
+                  {canManage && (
+                    <td>
+                      <button className="btn btn-success btn-sm" onClick={() => openEdit(h)}>✏️ Edit</button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {editing && (
+        <div className="modal-backdrop" onClick={() => setEditing(null)}>
+          <div className="modal-card" style={{ padding:24, width:520 }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ color:'#e2e8f0', marginTop:0 }}>✏️ Edit Hospital</h3>
+            <div className="form-grid" style={{ padding:0 }}>
+              <div className="form-group"><label>Name</label><input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></div>
+              <div className="form-group"><label>Location</label><input value={editForm.location} onChange={e => setEditForm({ ...editForm, location: e.target.value })} /></div>
+              <div className="form-group"><label>Phone</label><input value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} /></div>
+              <div className="form-group"><label>Email</label><input type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
+            </div>
+            <div style={{ display:'flex', gap:10, marginTop:12 }}>
+              <button className="btn btn-success" onClick={saveEdit}>Save Changes</button>
+              <button className="btn" style={{ background:'#334155', color:'#e2e8f0' }} onClick={() => setEditing(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

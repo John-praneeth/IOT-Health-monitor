@@ -21,7 +21,7 @@ export default function App() {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    const role = localStorage.getItem('role');
+    const role = (localStorage.getItem('role') || '').toUpperCase();
     const username = localStorage.getItem('username');
     const doctor_id = localStorage.getItem('doctor_id');
     const nurse_id = localStorage.getItem('nurse_id');
@@ -33,7 +33,7 @@ export default function App() {
 
   const handleLogin = async (data) => {
     localStorage.setItem('token', data.access_token);
-    localStorage.setItem('role', data.role);
+    localStorage.setItem('role', (data.role || '').toUpperCase());
     localStorage.setItem('username', data.username);
     if (data.doctor_id) localStorage.setItem('doctor_id', data.doctor_id);
     if (data.nurse_id) localStorage.setItem('nurse_id', data.nurse_id);
@@ -43,7 +43,7 @@ export default function App() {
       localStorage.setItem('user_id', meRes.data.user_id);
     } catch { /* ignore */ }
     setUser({
-      token: data.access_token, role: data.role, username: data.username,
+      token: data.access_token, role: (data.role || '').toUpperCase(), username: data.username,
       doctor_id: data.doctor_id, nurse_id: data.nurse_id,
     });
   };

@@ -42,7 +42,7 @@ export default function Doctors() {
   const [editing,     setEditing]     = useState(null);
   const [editForm,    setEditForm]    = useState(EMPTY);
 
-  const role = localStorage.getItem('role');
+  const role = (localStorage.getItem('role') || '').toUpperCase();
   const myDoctorId = localStorage.getItem('doctor_id');
   const canManage = role === 'ADMIN';
 

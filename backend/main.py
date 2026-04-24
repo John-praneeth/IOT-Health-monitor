@@ -261,9 +261,9 @@ def filter_response_by_role(current_user: models.User, data):
             "doctor_name": getattr(item, "doctor_name", None),
             "nurse_name": getattr(item, "nurse_name", None),
             "hospital_name": getattr(item, "hospital_name", None),
-            "hospital_id": None,
-            "assigned_doctor": None,
-            "assigned_nurse": None,
+            "hospital_id": item.hospital_id,
+            "assigned_doctor": item.assigned_doctor,
+            "assigned_nurse": item.assigned_nurse,
         }
         return d
 
@@ -731,6 +731,19 @@ def create_hospital(
     db: Session = Depends(get_db),
 ):
     return crud.create_hospital(db, hospital)
+
+
+@app.put("/hospitals/{hospital_id}", response_model=schemas.HospitalOut, tags=["Hospitals"])
+def update_hospital(
+    hospital_id: int,
+    payload: schemas.HospitalUpdate,
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
+):
+    updated = crud.update_hospital(db, hospital_id, payload, user_id=current_user.user_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Hospital not found")
+    return updated
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

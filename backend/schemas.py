@@ -79,6 +79,10 @@ class HospitalCreate(HospitalBase):
     pass
 
 
+class HospitalUpdate(HospitalBase):
+    pass
+
+
 class HospitalOut(HospitalBase):
     hospital_id: int
     model_config = ConfigDict(from_attributes=True)

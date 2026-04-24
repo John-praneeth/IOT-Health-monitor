@@ -40,7 +40,7 @@ export default function Nurses() {
   const [editing,   setEditing]   = useState(null);
   const [editForm,  setEditForm]  = useState(EMPTY);
 
-  const role = localStorage.getItem('role');
+  const role = (localStorage.getItem('role') || '').toUpperCase();
   const myNurseId = localStorage.getItem('nurse_id');
   const canManage = role === 'ADMIN' || role === 'DOCTOR';
 
