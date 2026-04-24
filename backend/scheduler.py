@@ -121,7 +121,10 @@ def run():
         except Exception as exc:
             logging.error("Scheduler error: %s", exc)
         finally:
-            db.close()
+            try:
+                db.close()
+            except Exception as exc:
+                logging.warning("DB session close failed (continuing): %s", exc)
 
         time.sleep(INTERVAL_SECONDS)
 
