@@ -68,6 +68,8 @@ def run():
                 logging.info("Fake vitals generation is now %s", "ENABLED" if enabled else "DISABLED")
                 last_enabled = enabled
             if not enabled:
+                # Avoid a tight loop when generation is disabled.
+                time.sleep(INTERVAL_SECONDS)
                 continue
 
             current_source = data_sources.get_data_source_config()["source"]
