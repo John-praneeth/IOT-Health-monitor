@@ -226,6 +226,36 @@ def test_alert_not_sent_to_nurse(monkeypatch):
     assert sent_to == ["919900000011"]
 
 
+def test_escalation_uses_explicit_recipients(monkeypatch):
+    sent_to = []
+
+    monkeypatch.setattr(whatsapp_notifier, "WHATSAPP_ENABLED", True)
+    monkeypatch.setattr(whatsapp_notifier, "is_alerts_paused", lambda: False)
+    monkeypatch.setattr(
+        whatsapp_notifier,
+        "get_patient_recipients",
+        lambda patient_id: ["919900000099"],
+    )
+    monkeypatch.setattr(
+        whatsapp_notifier,
+        "send_whatsapp_message",
+        lambda phone, body, alert_id=None, event_type="NEW", retries=3: sent_to.append(phone) or True,
+    )
+
+    result = whatsapp_notifier.send_escalation_notification(
+        alert_type="LOW_SPO2",
+        patient_name="P1",
+        patient_id=1,
+        room_number="A-1",
+        recipients=["+919900000011", "919900000012", "919900000011"],
+        alert_id=101,
+    )
+
+    assert result["sent"] == 2
+    assert result["failed"] == 0
+    assert sent_to == ["919900000011", "919900000012"]
+
+
 def test_invalid_vitals_rejected(client):
     admin = _admin_headers(client)
     assigned = _create_doctor_user(client, admin, "doc_vitals", "919900000013")

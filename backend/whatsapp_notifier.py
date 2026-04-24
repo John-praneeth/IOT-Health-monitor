@@ -538,7 +538,7 @@ def send_escalation_notification(
     alert_id: int = None,
 ) -> dict:
     """Send a WhatsApp escalation alert. Idempotent with ESCALATION key.
-    Recipient resolution is strict: assigned doctor only.
+    Uses explicit recipients when provided; otherwise falls back to assigned doctor.
     """
     if not WHATSAPP_ENABLED:
         return {"enabled": False, "sent": 0, "failed": 0}
@@ -547,12 +547,22 @@ def send_escalation_notification(
         logger.debug("WhatsApp alerts are paused. Skipping escalation for patient %s.", patient_id)
         return {"enabled": True, "paused": True, "sent": 0, "failed": 0}
 
-    # Strict recipient policy: assigned doctor only.
-    target = get_patient_recipients(patient_id)
+    if recipients:
+        # Explicit escalation recipient list from caller (e.g., same-spec doctors).
+        target = []
+        seen = set()
+        for phone in recipients:
+            normalized = _normalize_phone(phone)
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                target.append(normalized)
+    else:
+        # Fallback policy: patient's assigned doctor.
+        target = get_patient_recipients(patient_id)
 
     if not target:
-        logger.warning("No assigned doctor recipient configured. Skipping escalation.")
-        return {"enabled": True, "sent": 0, "failed": 0, "reason": "no_assigned_doctor_recipient"}
+        logger.warning("No escalation recipient configured. Skipping escalation.")
+        return {"enabled": True, "sent": 0, "failed": 0, "reason": "no_escalation_recipient"}
 
     message = _format_escalation_message(
         alert_type=alert_type,
