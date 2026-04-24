@@ -65,6 +65,7 @@ services:
       WHATSAPP_ENABLED: "true"
       GREEN_API_ID: ${GREEN_API_ID:-}
       GREEN_API_TOKEN: ${GREEN_API_TOKEN:-}
+      WHATSAPP_WEBHOOK_SECRET: ${WHATSAPP_WEBHOOK_SECRET:-}
       WHATSAPP_RECIPIENTS: ""
       # v5.2 new env vars
       WS_BROADCAST_MODE: "event"
