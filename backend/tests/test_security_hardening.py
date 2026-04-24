@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import main
 import models
 import whatsapp_notifier
 
@@ -272,3 +273,25 @@ def test_invalid_vitals_rejected(client):
         headers=admin,
     )
     assert resp.status_code == 422
+
+
+def test_whatsapp_webhook_rejects_invalid_secret(monkeypatch, client):
+    monkeypatch.setattr(main, "WHATSAPP_WEBHOOK_SECRET", "super-secret")
+
+    resp = client.post(
+        "/whatsapp/webhook",
+        json={"typeWebhook": "incomingMessageReceived"},
+    )
+    assert resp.status_code == 403
+
+
+def test_whatsapp_webhook_accepts_valid_secret(monkeypatch, client):
+    monkeypatch.setattr(main, "WHATSAPP_WEBHOOK_SECRET", "super-secret")
+
+    resp = client.post(
+        "/whatsapp/webhook",
+        json={"typeWebhook": "statusInstanceChanged"},
+        headers={"x-whatsapp-webhook-secret": "super-secret"},
+    )
+    assert resp.status_code == 200
+    assert resp.json().get("status") == "ignored"

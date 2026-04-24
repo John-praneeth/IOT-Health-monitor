@@ -26,6 +26,10 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# Prevent outbound request URL logs from exposing provider credentials in path.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 # ── Feature toggle ────────────────────────────────────────────────────────────
 WHATSAPP_ENABLED = os.getenv("WHATSAPP_ENABLED", "true").lower() in ("true", "1", "yes")
 

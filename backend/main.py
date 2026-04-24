@@ -3,6 +3,7 @@ main.py  –  FastAPI backend for IoT Healthcare Patient Monitor v5.2.
 """
 
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -99,6 +100,7 @@ ALLOW_ADMIN_ALERT_ACK = os.getenv("ALLOW_ADMIN_ALERT_ACK", "false").lower() in (
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
 FORGOT_PASSWORD_CODE_TTL_MINUTES = int(os.getenv("FORGOT_PASSWORD_CODE_TTL_MINUTES", "10"))
 FAKE_VITALS_ENABLED_SETTING_KEY = "fake_vitals_generation_enabled"
+WHATSAPP_WEBHOOK_SECRET = os.getenv("WHATSAPP_WEBHOOK_SECRET", "")
 
 # ── Basic Prometheus-compatible metrics (no external dependency) ─────────────
 APP_STARTED_AT = time.time()
@@ -1562,6 +1564,22 @@ def _get_ws_user(token: str, db: Session) -> tuple[Optional[models.User], Option
     return user, None
 
 
+def _is_valid_whatsapp_webhook_secret(request: Request) -> bool:
+    """Validate optional shared-secret for provider webhooks.
+
+    If WHATSAPP_WEBHOOK_SECRET is unset, webhook remains open for compatibility.
+    """
+    if not WHATSAPP_WEBHOOK_SECRET:
+        return True
+    provided = (
+        request.headers.get("x-whatsapp-webhook-secret")
+        or request.headers.get("x-webhook-secret")
+        or request.query_params.get("secret")
+        or ""
+    )
+    return hmac.compare_digest(provided, WHATSAPP_WEBHOOK_SECRET)
+
+
 @app.websocket("/ws/vitals")
 async def ws_vitals(websocket: WebSocket):
     """v5.2: Event-driven WebSocket. Clients connect and receive updates pushed
@@ -1748,6 +1766,10 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
     No auth required (GREEN-API calls this endpoint).
     """
     try:
+        if not _is_valid_whatsapp_webhook_secret(request):
+            logger.warning("WhatsApp webhook rejected: invalid shared secret")
+            raise HTTPException(status_code=403, detail="Invalid webhook signature")
+
         body = await request.json()
         logger.info("WhatsApp webhook received: typeWebhook=%s", body.get("typeWebhook"))
 
@@ -1879,6 +1901,8 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
                 return {"status": "no_pending_alerts", "phone": sender_phone}
 
         return {"status": "received", "action": "none"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("WhatsApp webhook error: %s", e, exc_info=True)
         return {"status": "error", "detail": "Unable to process webhook payload"}
