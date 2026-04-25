@@ -15,3 +15,7 @@ class VitalSource(ABC):
     @abstractmethod
     def get_vitals(self, patient_id: int) -> Dict:
         ...
+
+    def get_history(self, patient_id: int, count: int = 50) -> list[Dict]:
+        """Fetch multiple recent records. Default implementation just returns current vitals."""
+        return [self.get_vitals(patient_id)]

@@ -9,9 +9,34 @@ import logging
 import crud
 import models
 import whatsapp_notifier
-from data_sources import get_source
+from data_sources import get_source, get_active_source_name
 
 logger = logging.getLogger(__name__)
+
+
+def backfill_history(db, patient_id: int, source=None, count: int = 50):
+    """
+    If the patient has no vitals from the current source, fetch history
+    from the provider and persist it (silently, without triggering alerts).
+    """
+    if source is None:
+        source = get_source()
+        
+    # Check if we already have data for this patient/source
+    from models import Vitals
+    active_name = get_active_source_name()
+    exists = db.query(Vitals).filter(Vitals.patient_id == patient_id, Vitals.source == active_name).first()
+    if exists:
+        return
+        
+    logger.info("Backfilling history for patient %d from source %s", patient_id, active_name)
+    history = source.get_history(patient_id, count=count)
+    for entry in history:
+        try:
+            # Persist without alert syncing to avoid flooding notifications for old data
+            crud.create_vitals(db, entry)
+        except Exception as e:
+            logger.warning("Failed to save history entry for P%d: %s", patient_id, e)
 
 
 def save_fake(db, patient_id: int, source=None):

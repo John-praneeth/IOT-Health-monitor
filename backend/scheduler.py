@@ -85,6 +85,9 @@ def run():
             active_source = data_sources.get_source()
             vitals_snapshot = []
             for p in patients:
+                # One-time backfill if DB is empty for this source
+                fake_generator.backfill_history(db, p.patient_id, source=active_source)
+                
                 vital, alerts = fake_generator.save_fake(db, p.patient_id, source=active_source)
                 alert_str = ", ".join(alerts) if alerts else "—"
                 logging.info(

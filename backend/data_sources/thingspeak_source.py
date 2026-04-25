@@ -50,6 +50,39 @@ class ThingSpeakSource(VitalSource):
         if entry is None:
             return self._fallback(patient_id, "fetch_failed")
 
+        return self._parse_entry(entry, patient_id)
+
+    def get_history(self, patient_id: int, count: int = 50) -> list[dict]:
+        """Fetch historical readings from ThingSpeak for backfilling."""
+        if not self.channel_id:
+            return []
+
+        url = f"{THINGSPEAK_BASE}/channels/{self.channel_id}/feeds.json"
+        params = {"results": count}
+        if self.api_key:
+            params["api_key"] = self.api_key
+
+        try:
+            resp = httpx.get(url, params=params, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                feeds = data.get("feeds", [])
+                results = []
+                for entry in feeds:
+                    parsed = self._parse_entry(entry, patient_id, skip_stale_check=True)
+                    if not parsed.get("is_fallback"):
+                        results.append(parsed)
+                return results
+            else:
+                logger.error("ThingSpeak History HTTP %d: %s", resp.status_code, resp.text[:200])
+        except Exception as exc:
+            logger.error("ThingSpeak history error: %s", exc)
+        return []
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _parse_entry(self, entry: dict, patient_id: int, skip_stale_check: bool = False) -> dict:
+        """Centralized parser for a single ThingSpeak feed entry."""
         # ── Parse fields ──────────────────────────────────────────────────
         hr   = self._safe_float(entry.get("field1"), 0)
         spo2 = self._safe_float(entry.get("field2"), 0)
@@ -61,41 +94,32 @@ class ThingSpeakSource(VitalSource):
 
         # ── Validate (sensor sends 0 when not on finger) ─────────────────
         if hr <= 0 or spo2 <= 0 or temp <= 0:
-            logger.warning(
-                "Sensor reads zero (device idle?) — HR=%.0f SpO2=%.0f Temp=%.1f",
-                hr, spo2, temp,
-            )
             return self._fallback(patient_id, "sensor_zero")
 
-        if not (20 < hr < 300):
-            logger.warning("Heart rate out of range: %.0f", hr)
-            return self._fallback(patient_id, "invalid_hr")
-
-        if not (40 < spo2 <= 100):
-            logger.warning("SpO2 out of range: %.0f", spo2)
-            return self._fallback(patient_id, "invalid_spo2")
-
-        if not (70 < temp < 115):
-            logger.warning("Temperature out of range: %.1f°F", temp)
-            return self._fallback(patient_id, "invalid_temp")
+        if not (20 < hr < 300) or not (40 < spo2 <= 100) or not (70 < temp < 115):
+            return self._fallback(patient_id, "invalid_range")
 
         # ── Stale-data check ─────────────────────────────────────────────
-        if self._is_stale(entry):
+        if not skip_stale_check and self._is_stale(entry):
             return self._fallback(patient_id, "stale_data")
 
-        logger.info(
-            "ThingSpeak → patient %d  HR=%.0f  SpO2=%.0f%%  Temp=%.1f°F",
-            patient_id, hr, spo2, temp,
-        )
+        # Extract timestamp
+        ts = None
+        created = entry.get("created_at")
+        if created:
+            try:
+                ts = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            except Exception:
+                pass
 
         return {
             "patient_id": patient_id,
             "heart_rate": int(round(hr)),
             "spo2": int(round(spo2)),
             "temperature": round(temp, 1),
+            "timestamp": ts,
         }
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _fetch_latest(self) -> dict | None:
         """GET the last feed entry from ThingSpeak."""
