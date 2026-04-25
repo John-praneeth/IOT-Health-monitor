@@ -20,7 +20,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-INTERVAL_SECONDS = 10
+INTERVAL_SECONDS = 5
 ESCALATION_MINUTES = 2
 FAKE_VITALS_ENABLED_SETTING_KEY = "fake_vitals_generation_enabled"
 

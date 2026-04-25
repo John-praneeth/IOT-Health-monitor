@@ -257,7 +257,12 @@ export default function Vitals() {
               {vitals.map(v => (
                 <tr key={v.vital_id} className={rowClass(v)}>
                   <td>{v.timestamp ? toLocal(v.timestamp).toLocaleTimeString() : '—'}</td>
-                  <td>{patientName(v.patient_id)}</td>
+                  <td>
+                    {patientName(v.patient_id)}
+                    {v.source === 'thingspeak' && !v.is_fallback && (
+                      <span style={{ marginLeft: 6, fontSize: 8, padding: '2px 4px', borderRadius: 4, background: 'rgba(59,130,246,0.3)', color: '#93c5fd' }}>IOT-LIVE</span>
+                    )}
+                  </td>
                   <td style={{ color: (v.heart_rate > 110 || v.heart_rate < 50) ? '#f87171' : '#34d399' }}>
                     {v.heart_rate} bpm
                   </td>
@@ -271,6 +276,9 @@ export default function Vitals() {
                     {rowClass(v) === 'vital-critical' && <span className="badge badge-red">Critical</span>}
                     {rowClass(v) === 'vital-warning'  && <span className="badge badge-amber">Warning</span>}
                     {rowClass(v) === ''               && <span className="badge badge-green">Normal</span>}
+                    {v.source === 'thingspeak' && !v.is_fallback && (
+                      <div style={{ fontSize: 9, color: '#93c5fd', marginTop: 4, fontWeight: '600' }}>✓ Hardware Confirmed</div>
+                    )}
                   </td>
                 </tr>
               ))}

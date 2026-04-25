@@ -374,7 +374,12 @@ export default function Dashboard() {
                 return (
                   <tr key={p.patient_id}
                     className={status === 'critical' ? 'vital-critical' : status === 'warning' ? 'vital-warning' : ''}>
-                    <td><strong>{p.name}</strong></td>
+                    <td>
+                      <strong>{p.name}</strong>
+                      {v && v.source === 'thingspeak' && !v.is_fallback && (
+                        <span style={{ marginLeft: 6, fontSize: 8, padding: '2px 4px', borderRadius: 4, background: 'rgba(59,130,246,0.3)', color: '#93c5fd' }}>IOT-LIVE</span>
+                      )}
+                    </td>
                     <td>{p.room_number}</td>
                     <td>{p.hospital_name || '—'}</td>
                     <td>{p.doctor_name || '—'}</td>

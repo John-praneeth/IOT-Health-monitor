@@ -32,6 +32,8 @@ class ThingSpeakSource(VitalSource):
         self.temp_unit = temp_unit.upper()
         self.stale_threshold = stale_threshold
         self._fallback_source = FakeSource()
+        self._cache_latest: dict | None = None
+        self._cache_timestamp: float = 0
         logger.info(
             "ThingSpeak source initialised — channel=%s  temp_unit=%s",
             self.channel_id or "(not set)", self.temp_unit,
@@ -41,15 +43,23 @@ class ThingSpeakSource(VitalSource):
 
     def get_vitals(self, patient_id: int) -> dict:
         """Fetch the latest reading from ThingSpeak and return a vitals dict."""
+        import time
 
         if not self.channel_id:
             logger.error("THINGSPEAK_CHANNEL_ID not set — returning fallback vitals")
             return self._fallback(patient_id, "no_channel")
 
+        # Use cache if fresh (2 seconds) to avoid per-patient rate limiting
+        now = time.time()
+        if self._cache_latest and (now - self._cache_timestamp < 2):
+            return self._parse_entry(self._cache_latest, patient_id)
+
         entry = self._fetch_latest()
         if entry is None:
             return self._fallback(patient_id, "fetch_failed")
 
+        self._cache_latest = entry
+        self._cache_timestamp = now
         return self._parse_entry(entry, patient_id)
 
     def get_history(self, patient_id: int, count: int = 50) -> list[dict]:
