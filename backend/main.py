@@ -98,6 +98,7 @@ WS_BROADCAST_MODE = os.getenv("WS_BROADCAST_MODE", "event")  # "event" (incremen
 WS_REDIS_CHANNEL = "iot:vitals"
 ALLOW_ADMIN_ALERT_ACK = os.getenv("ALLOW_ADMIN_ALERT_ACK", "false").lower() in ("1", "true", "yes")
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+MAX_PAGE_SIZE = 500
 FORGOT_PASSWORD_CODE_TTL_MINUTES = int(os.getenv("FORGOT_PASSWORD_CODE_TTL_MINUTES", "10"))
 FAKE_VITALS_ENABLED_SETTING_KEY = "fake_vitals_generation_enabled"
 WHATSAPP_WEBHOOK_SECRET = os.getenv("WHATSAPP_WEBHOOK_SECRET", "")
@@ -778,10 +779,13 @@ def update_hospital(
 def list_doctors(
     hospital_id: Optional[int] = None,
     specialization: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    return crud.get_doctors(db, hospital_id=hospital_id, specialization=specialization)
+    limit = min(limit, MAX_PAGE_SIZE)
+    return crud.get_doctors(db, hospital_id=hospital_id, specialization=specialization, limit=limit, offset=offset)
 
 
 @app.post("/doctors", response_model=schemas.DoctorOut, tags=["Doctors"])
@@ -862,10 +866,13 @@ def list_doctor_patients(
 @app.get("/nurses", response_model=List[schemas.NurseOut], tags=["Nurses"])
 def list_nurses(
     hospital_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    return crud.get_nurses(db, hospital_id=hospital_id)
+    limit = min(limit, MAX_PAGE_SIZE)
+    return crud.get_nurses(db, hospital_id=hospital_id, limit=limit, offset=offset)
 
 
 @app.post("/nurses", response_model=schemas.NurseOut, tags=["Nurses"])
@@ -946,19 +953,22 @@ def list_nurse_patients(
 def list_patients(
     doctor_id: Optional[int] = None,
     nurse_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
+    limit = min(limit, MAX_PAGE_SIZE)
     if current_user.role == "DOCTOR":
         if not current_user.doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these patients")
         if doctor_id and doctor_id != current_user.doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these patients")
         if doctor_id == current_user.doctor_id:
-            patients = crud.get_patients(db, doctor_id=current_user.doctor_id)
+            patients = crud.get_patients(db, doctor_id=current_user.doctor_id, limit=limit, offset=offset)
         else:
             allowed_ids = _allowed_patient_ids_for_user(db, current_user)
-            patients = crud.get_patients(db, patient_ids=list(allowed_ids or []))
+            patients = crud.get_patients(db, patient_ids=list(allowed_ids or []), limit=limit, offset=offset)
         return filter_response_by_role(current_user, patients)
     elif current_user.role == "NURSE":
         if not current_user.nurse_id:
@@ -968,12 +978,12 @@ def list_patients(
         if doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these patients")
         if nurse_id == current_user.nurse_id:
-            patients = crud.get_patients(db, nurse_id=current_user.nurse_id)
+            patients = crud.get_patients(db, nurse_id=current_user.nurse_id, limit=limit, offset=offset)
         else:
             allowed_ids = _allowed_patient_ids_for_user(db, current_user)
-            patients = crud.get_patients(db, patient_ids=list(allowed_ids or []))
+            patients = crud.get_patients(db, patient_ids=list(allowed_ids or []), limit=limit, offset=offset)
         return filter_response_by_role(current_user, patients)
-    patients = crud.get_patients(db, doctor_id=doctor_id, nurse_id=nurse_id)
+    patients = crud.get_patients(db, doctor_id=doctor_id, nurse_id=nurse_id, limit=limit, offset=offset)
     return filter_response_by_role(current_user, patients)
 
 
@@ -1100,6 +1110,7 @@ def get_vitals(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
+    limit = min(limit, MAX_PAGE_SIZE)
     if patient_id is not None:
         p = crud.get_patient(db, patient_id)
         if not p:
@@ -1157,6 +1168,7 @@ def get_alerts(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
+    limit = min(limit, MAX_PAGE_SIZE)
     if current_user.role == "ADMIN":
         return crud.get_alerts(db, status=status, doctor_id=doctor_id, limit=limit, offset=offset)
 
@@ -1355,6 +1367,7 @@ def get_patient_chat(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
+    limit = min(limit, MAX_PAGE_SIZE)
     p = crud.get_patient(db, patient_id)
     if not p:
         raise HTTPException(status_code=404, detail="Patient not found")
@@ -1390,10 +1403,12 @@ def post_patient_chat(
 def list_audit_logs(
     entity: Optional[str] = None,
     limit: int = 200,
+    offset: int = 0,
     current_user: models.User = Depends(auth.require_role("ADMIN")),
     db: Session = Depends(get_db),
 ):
-    return crud.get_audit_logs(db, entity=entity, limit=limit)
+    limit = min(limit, MAX_PAGE_SIZE)
+    return crud.get_audit_logs(db, entity=entity, limit=limit, offset=offset)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1634,10 +1649,25 @@ async def ws_vitals(websocket: WebSocket):
         return
 
     try:
+        last_val_time = time.time()
         if is_redis_available():
             # Event-driven mode: just keep the connection alive.
             # Broadcasts are handled by _redis_vitals_subscriber.
             while True:
+                # Periodic security re-validation (every 60s)
+                now = time.time()
+                if now - last_val_time > 60:
+                    db_val = SessionLocal()
+                    try:
+                        u_check, err = _get_ws_user(token, db_val)
+                        if not u_check:
+                            logger.warning("WS security re-validation failed for %s: %s", user.username, err)
+                            await websocket.close(code=1008, reason=f"Session invalid: {err}")
+                            break
+                        last_val_time = now
+                    finally:
+                        db_val.close()
+
                 # Wait for client messages (ping/pong keepalive)
                 try:
                     await asyncio.wait_for(websocket.receive_text(), timeout=30)
@@ -1661,6 +1691,16 @@ async def ws_vitals(websocket: WebSocket):
             db = SessionLocal()
             try:
                 while True:
+                    # Periodic security re-validation (every 60s)
+                    now = time.time()
+                    if now - last_val_time > 60:
+                        u_check, err = _get_ws_user(token, db)
+                        if not u_check:
+                            logger.warning("WS security re-validation failed for %s: %s", user.username, err)
+                            await websocket.close(code=1008, reason=f"Session invalid: {err}")
+                            break
+                        last_val_time = now
+
                     allowed_ids = _allowed_patient_ids_for_user(db, user)
                     patients = crud.get_patients(db)
                     if allowed_ids is not None:
@@ -2286,4 +2326,5 @@ def list_whatsapp_logs(
     current_user: models.User = Depends(auth.require_role("ADMIN")),
     db: Session = Depends(get_db),
 ):
+    limit = min(limit, MAX_PAGE_SIZE)
     return crud.get_whatsapp_logs(db, limit=limit, offset=offset)

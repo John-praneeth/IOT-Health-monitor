@@ -85,6 +85,14 @@ API.interceptors.response.use(
     if (error.response?.data?.error?.message && !error.response.data.detail) {
       error.response.data.detail = error.response.data.error.message;
     }
+
+    // Handle Network Error (Server Offline)
+    if (!error.response && (error.code === 'ECONNABORTED' || error.message === 'Network Error')) {
+      window.dispatchEvent(new CustomEvent('server-offline', { 
+        detail: { message: 'Server is currently unreachable. Please check your connection.' } 
+      }));
+    }
+
     return Promise.reject(error);
   }
 );

@@ -18,6 +18,13 @@ import './App.css';
 export default function App() {
   const [user, setUser] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [serverOffline, setServerOffline] = useState(false);
+
+  useEffect(() => {
+    const handleOffline = () => setServerOffline(true);
+    window.addEventListener('server-offline', handleOffline);
+    return () => window.removeEventListener('server-offline', handleOffline);
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -65,6 +72,12 @@ export default function App() {
   return (
     <Router>
       <div className="app-layout">
+        {serverOffline && (
+          <div className="server-offline-banner">
+            ⚠️ Connection Lost: The server is currently offline. Some features may be limited. 
+            <button onClick={() => setServerOffline(false)}>Dismiss</button>
+          </div>
+        )}
         <div className="bg-orb orb-a" />
         <div className="bg-orb orb-b" />
         <div className="bg-orb orb-c" />
