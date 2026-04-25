@@ -131,15 +131,9 @@ export default function Patients() {
         name: editForm.name,
         age: Number(editForm.age),
         room_number: editForm.room_number,
-        hospital_id: editForm.hospital_id
-          ? Number(editForm.hospital_id)
-          : (editingPatient.hospital_id ?? null),
-        assigned_doctor: editForm.assigned_doctor
-          ? Number(editForm.assigned_doctor)
-          : (editingPatient.assigned_doctor ?? null),
-        assigned_nurse: editForm.assigned_nurse
-          ? Number(editForm.assigned_nurse)
-          : (editingPatient.assigned_nurse ?? null),
+        hospital_id: editForm.hospital_id === '' ? null : Number(editForm.hospital_id),
+        assigned_doctor: editForm.assigned_doctor === '' ? null : Number(editForm.assigned_doctor),
+        assigned_nurse: editForm.assigned_nurse === '' ? null : Number(editForm.assigned_nurse),
       });
       setEditingPatient(null);
       setEditForm(EMPTY_FORM);
@@ -380,7 +374,7 @@ export default function Patients() {
                 <label>Doctor</label>
                 <select value={editForm.assigned_doctor} onChange={e => setEditForm({ ...editForm, assigned_doctor: e.target.value })}>
                   <option value="">— None —</option>
-                  {(editForm.hospital_id ? doctors.filter(d => String(d.hospital_id) === String(editForm.hospital_id) || d.is_freelancer) : doctors)
+                  {(editForm.hospital_id ? doctors.filter(d => String(d.hospital_id) === String(editForm.hospital_id) || d.is_freelancer || String(d.doctor_id) === editForm.assigned_doctor) : doctors)
                     .map(d => <option key={d.doctor_id} value={d.doctor_id}>{d.name}</option>)}
                 </select>
               </div>
@@ -388,7 +382,7 @@ export default function Patients() {
                 <label>Nurse</label>
                 <select value={editForm.assigned_nurse} onChange={e => setEditForm({ ...editForm, assigned_nurse: e.target.value })}>
                   <option value="">— None —</option>
-                  {(editForm.hospital_id ? nurses.filter(n => String(n.hospital_id) === String(editForm.hospital_id)) : nurses)
+                  {(editForm.hospital_id ? nurses.filter(n => String(n.hospital_id) === String(editForm.hospital_id) || String(n.nurse_id) === editForm.assigned_nurse) : nurses)
                     .map(n => <option key={n.nurse_id} value={n.nurse_id}>{n.name}</option>)}
                 </select>
               </div>

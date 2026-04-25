@@ -7,6 +7,8 @@ import {
   removeWhatsAppRecipient,
   getDoctors,
   getNurses,
+  updateDoctor,
+  updateNurse,
 } from '../api';
 
 export default function WhatsAppConfig() {
@@ -47,20 +49,55 @@ export default function WhatsAppConfig() {
   // Combine all registered doctors + nurses who have a phone number
   const registeredRecipients = [
     ...doctors.filter(d => d.phone).map(d => ({
+      id: d.doctor_id,
       name: d.name,
       phone: d.phone,
       role: 'Doctor',
-      dept: d.department || '',
+      dept: d.specialization || '',
       roleIcon: '👨‍⚕️',
+      original: d
     })),
     ...nurses.filter(n => n.phone).map(n => ({
+      id: n.nurse_id,
       name: n.name,
       phone: n.phone,
       role: 'Nurse',
       dept: n.department || '',
       roleIcon: '👩‍⚕️',
+      original: n
     })),
   ];
+
+  const handleRemoveAutoRecipient = async (r) => {
+    if (!window.confirm(`Remove ${r.name}'s phone number to stop WhatsApp alerts for them?`)) return;
+    setActionLoading(true);
+    try {
+      if (r.role === 'Doctor') {
+        await updateDoctor(r.id, {
+          name: r.original.name,
+          specialization: r.original.specialization,
+          hospital_id: r.original.hospital_id,
+          phone: null,
+          email: r.original.email,
+          is_freelancer: r.original.is_freelancer,
+        });
+      } else {
+        await updateNurse(r.id, {
+          name: r.original.name,
+          department: r.original.department,
+          hospital_id: r.original.hospital_id,
+          phone: null,
+          email: r.original.email,
+          shift_time: r.original.shift_time,
+        });
+      }
+      await load();
+    } catch (err) {
+      setError('Failed to remove phone: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const handleToggleAlerts = async () => {
     setActionLoading(true);
@@ -268,8 +305,19 @@ export default function WhatsAppConfig() {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ color: '#67e8f9', fontFamily: 'monospace', fontSize: 13 }}>+{r.phone}</div>
-                  <div style={{ color: '#10b981', fontSize: 11, marginTop: 2 }}>✓ via GREEN-API</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end' }}>
+                    <div>
+                      <div style={{ color: '#67e8f9', fontFamily: 'monospace', fontSize: 13 }}>+{r.phone}</div>
+                      <div style={{ color: '#10b981', fontSize: 11, marginTop: 2 }}>✓ via GREEN-API</div>
+                    </div>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      disabled={actionLoading}
+                      onClick={() => handleRemoveAutoRecipient(r)}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

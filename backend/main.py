@@ -1713,8 +1713,18 @@ def get_whatsapp_config(
 def add_whatsapp_recipient(
     body: schemas.WhatsAppRecipientAdd,
     current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
 ):
     """Add a WhatsApp recipient phone number."""
+    phone = body.phone.strip().lstrip("+")
+    existing_recipients = whatsapp_notifier.get_all_recipients()
+    
+    doctor = db.query(models.Doctor).filter(models.Doctor.phone.like(f"%{phone}%")).first()
+    nurse = db.query(models.Nurse).filter(models.Nurse.phone.like(f"%{phone}%")).first()
+    
+    if phone in existing_recipients or doctor or nurse:
+        raise HTTPException(status_code=400, detail="Phone number is already a recipient")
+        
     whatsapp_notifier.add_recipient(body.phone)
     return whatsapp_notifier.get_config()
 
