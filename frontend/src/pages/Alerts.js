@@ -15,9 +15,9 @@ export default function Alerts() {
   const [whatsappStatus, setWhatsappStatus] = useState(null);
   const [alertStats, setAlertStats] = useState(null);
 
-  const role = localStorage.getItem('role');
+  const role = (localStorage.getItem('role') || '').toUpperCase();
   const userId = parseInt(localStorage.getItem('user_id') || '0', 10);
-  const canAcknowledge = role === 'ADMIN' || role === 'DOCTOR';
+  const canAcknowledge = role === 'ADMIN' || role === 'DOCTOR' || role === 'NURSE';
 
   const load = useCallback(async () => {
     try {

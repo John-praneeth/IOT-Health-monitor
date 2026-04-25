@@ -244,19 +244,29 @@ def acknowledge_alert(
     if not patient:
         return None
 
-    if current_user.role == "DOCTOR":
-        if not current_user.doctor_id or patient.assigned_doctor != current_user.doctor_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Not authorized to acknowledge this alert",
-            )
-    elif current_user.role == "ADMIN":
-        if not allow_admin_override:
-            raise HTTPException(
-                status_code=403,
-                detail="Not authorized to acknowledge this alert",
-            )
-    else:
+    # ── Authorization Logic ──
+    is_authorized = False
+    
+    if current_user.role == "ADMIN":
+        # Admins can always acknowledge if override is allowed (standard in this setup)
+        if allow_admin_override:
+            is_authorized = True
+            
+    elif current_user.role == "DOCTOR":
+        # Assigned doctor or any doctor at the same hospital
+        if current_user.doctor_id:
+            doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == current_user.doctor_id).first()
+            if patient.assigned_doctor == current_user.doctor_id or (doctor and doctor.hospital_id == patient.hospital_id):
+                is_authorized = True
+                
+    elif current_user.role == "NURSE":
+        # Assigned nurse or any nurse at the same hospital
+        if current_user.nurse_id:
+            nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == current_user.nurse_id).first()
+            if patient.assigned_nurse == current_user.nurse_id or (nurse and nurse.hospital_id == patient.hospital_id):
+                is_authorized = True
+
+    if not is_authorized:
         raise HTTPException(
             status_code=403,
             detail="Not authorized to acknowledge this alert",

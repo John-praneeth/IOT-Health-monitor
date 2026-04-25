@@ -1283,7 +1283,7 @@ def check_patient_access(db: Session, current_user: models.User, patient: models
 
 
 def check_alert_ownership(db: Session, alert_id: int, current_user: models.User):
-    """Only the assigned doctor can acknowledge alerts (admin only if explicitly enabled)."""
+    """Only authorized medical staff can acknowledge alerts."""
     alert = db.query(models.Alert).filter(models.Alert.alert_id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
@@ -1292,21 +1292,30 @@ def check_alert_ownership(db: Session, alert_id: int, current_user: models.User)
     if not patient:
         raise HTTPException(status_code=404, detail="Patient associated with alert not found")
 
-    if current_user.role == "DOCTOR":
-        if not current_user.doctor_id or patient.assigned_doctor != current_user.doctor_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Not authorized to acknowledge this alert",
-            )
-        return
+    is_authorized = False
+    
+    if current_user.role == "ADMIN":
+        if ALLOW_ADMIN_ALERT_ACK:
+            is_authorized = True
+            
+    elif current_user.role == "DOCTOR":
+        if current_user.doctor_id:
+            doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == current_user.doctor_id).first()
+            if patient.assigned_doctor == current_user.doctor_id or (doctor and doctor.hospital_id == patient.hospital_id):
+                is_authorized = True
+                
+    elif current_user.role == "NURSE":
+        if current_user.nurse_id:
+            nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == current_user.nurse_id).first()
+            if patient.assigned_nurse == current_user.nurse_id or (nurse and nurse.hospital_id == patient.hospital_id):
+                is_authorized = True
 
-    if current_user.role == "ADMIN" and ALLOW_ADMIN_ALERT_ACK:
-        return
+    if not is_authorized:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to acknowledge this alert",
+        )
 
-    raise HTTPException(
-        status_code=403,
-        detail="Not authorized to acknowledge this alert",
-    )
 
 
 def _allowed_patient_ids_for_user(db: Session, user: models.User) -> Optional[set[int]]:

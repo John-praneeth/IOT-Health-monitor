@@ -55,13 +55,14 @@ def _create_nurse_user(client, admin_headers, username: str, phone: str):
     return {"nurse_id": nurse_id, "headers": headers}
 
 
-def _create_patient(client, actor_headers, doctor_id: int, nurse_id: int | None = None):
+def _create_patient(client, actor_headers, doctor_id: int, nurse_id: int | None = None, hospital_id: int | None = None):
     body = {
         "name": "Patient One",
         "age": 45,
         "room_number": "A-101",
         "assigned_doctor": doctor_id,
         "assigned_nurse": nurse_id,
+        "hospital_id": hospital_id,
     }
     resp = client.post("/patients", json=body, headers=actor_headers)
     assert resp.status_code == 200
@@ -99,37 +100,81 @@ def test_only_assigned_doctor_can_acknowledge(client, db):
     assert data["acknowledged_by"] == assigned["user_id"]
 
 
-def test_nurse_cannot_acknowledge(client, db):
+def test_authorized_nurse_can_acknowledge(client, db):
     admin = _admin_headers(client)
-    assigned = _create_doctor_user(client, admin, "doc_for_nurse_test", "919900000002")
-    nurse = _create_nurse_user(client, admin, "nurse_no_ack", "919900000003")
-    patient_id = _create_patient(client, admin, assigned["doctor_id"], nurse["nurse_id"])
+    # Hospital 1
+    h1_resp = client.post("/hospitals", json={"name": "H1", "location": "L1"}, headers=admin)
+    h1_id = h1_resp.json()["hospital_id"]
+    
+    assigned_doc = _create_doctor_user(client, admin, "doc_h1", "919900000002")
+    # Update doctor hospital
+    client.put(f"/doctors/{assigned_doc['doctor_id']}", json={"name": "Doc H1", "hospital_id": h1_id}, headers=admin)
+    
+    nurse = _create_nurse_user(client, admin, "nurse_h1", "919900000003")
+    # Update nurse hospital
+    client.put(f"/nurses/{nurse['nurse_id']}", json={"name": "Nurse H1", "hospital_id": h1_id}, headers=admin)
+    
+    patient_id = _create_patient(client, admin, assigned_doc["doctor_id"], nurse["nurse_id"], hospital_id=h1_id)
     alert_id = _create_pending_alert(db, patient_id)
 
+    # Nurse at same hospital can acknowledge
     resp = client.patch(
         f"/alerts/{alert_id}/acknowledge",
         json={"acknowledged_by": 1},
         headers=nurse["headers"],
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ACKNOWLEDGED"
 
 
-def test_other_doctor_cannot_acknowledge(client, db):
+def test_other_doctor_at_same_hospital_can_acknowledge(client, db):
     admin = _admin_headers(client)
-    assigned = _create_doctor_user(client, admin, "doc_owner", "919900000004")
-    other = _create_doctor_user(client, admin, "doc_other", "919900000005")
-    patient_id = _create_patient(client, admin, assigned["doctor_id"])
+    # Hospital 1
+    h1_resp = client.post("/hospitals", json={"name": "H1_Doc", "location": "L1"}, headers=admin)
+    h1_id = h1_resp.json()["hospital_id"]
+    
+    assigned_doc = _create_doctor_user(client, admin, "doc_assigned", "919900000004")
+    client.put(f"/doctors/{assigned_doc['doctor_id']}", json={"name": "Doc Assigned", "hospital_id": h1_id}, headers=admin)
+    
+    other_doc = _create_doctor_user(client, admin, "doc_other", "919900000005")
+    client.put(f"/doctors/{other_doc['doctor_id']}", json={"name": "Doc Other", "hospital_id": h1_id}, headers=admin)
+    
+    patient_id = _create_patient(client, admin, assigned_doc["doctor_id"], hospital_id=h1_id)
     alert_id = _create_pending_alert(db, patient_id)
 
+    # Other doctor at same hospital can acknowledge
     resp = client.patch(
         f"/alerts/{alert_id}/acknowledge",
         json={"acknowledged_by": 1},
-        headers=other["headers"],
+        headers=other_doc["headers"],
+    )
+    assert resp.status_code == 200
+
+
+def test_staff_at_different_hospital_cannot_acknowledge(client, db):
+    admin = _admin_headers(client)
+    # Hospital 1
+    h1 = client.post("/hospitals", json={"name": "H1", "location": "L1"}, headers=admin).json()["hospital_id"]
+    # Hospital 2
+    h2 = client.post("/hospitals", json={"name": "H2", "location": "L2"}, headers=admin).json()["hospital_id"]
+    
+    doc_h1 = _create_doctor_user(client, admin, "doc_h1_only", "919900000100")
+    client.put(f"/doctors/{doc_h1['doctor_id']}", json={"name": "Doc H1", "hospital_id": h1}, headers=admin)
+    
+    doc_h2 = _create_doctor_user(client, admin, "doc_h2_only", "919900000200")
+    client.put(f"/doctors/{doc_h2['doctor_id']}", json={"name": "Doc H2", "hospital_id": h2}, headers=admin)
+    
+    patient_h1 = _create_patient(client, admin, doc_h1["doctor_id"], hospital_id=h1)
+    alert_id = _create_pending_alert(db, patient_h1)
+
+    # Doctor at DIFFERENT hospital cannot acknowledge
+    resp = client.patch(
+        f"/alerts/{alert_id}/acknowledge",
+        json={"acknowledged_by": 1},
+        headers=doc_h2["headers"],
     )
     assert resp.status_code == 403
-    payload = resp.json()
-    detail = payload.get("detail") or payload.get("message") or str(payload)
-    assert "Not authorized to acknowledge this alert" in detail
+
 
 
 def test_patient_access_control(client):
