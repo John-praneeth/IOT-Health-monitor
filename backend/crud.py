@@ -136,16 +136,20 @@ def get_vitals(
     q = q.filter(models.Vitals.source == source_name)
     if patient_id:
         q = q.filter(models.Vitals.patient_id == patient_id)
+        
+    _p_ids = None
     if doctor_id:
-        patient_ids = [p.patient_id for p in get_patients_by_doctor(db, doctor_id)]
-        q = q.filter(models.Vitals.patient_id.in_(patient_ids))
-    if nurse_id:
-        patient_ids = [p.patient_id for p in get_patients(db, nurse_id=nurse_id)]
-        q = q.filter(models.Vitals.patient_id.in_(patient_ids))
-    if patient_ids is not None:
-        if not patient_ids:
+        _p_ids = [p.patient_id for p in get_patients_by_doctor(db, doctor_id)]
+    elif nurse_id:
+        _p_ids = [p.patient_id for p in get_patients(db, nurse_id=nurse_id)]
+    elif patient_ids is not None:
+        _p_ids = patient_ids
+
+    if _p_ids is not None:
+        if not _p_ids:
             return []
-        q = q.filter(models.Vitals.patient_id.in_(patient_ids))
+        q = q.filter(models.Vitals.patient_id.in_(_p_ids))
+        
     return q.order_by(models.Vitals.timestamp.desc()).offset(offset).limit(limit).all()
 
 
@@ -573,27 +577,27 @@ def delete_patient(db: Session, patient_id: int, user_id: int):
         
         # Delete related escalations
         if alert_ids:
-            db.query(models.AlertEscalation).filter(models.AlertEscalation.alert_id.in_(alert_ids)).delete()
+            db.query(models.AlertEscalation).filter(models.AlertEscalation.alert_id.in_(alert_ids)).delete(synchronize_session=False)
         
         # Delete related notifications
         if alert_ids:
-            db.query(models.AlertNotification).filter(models.AlertNotification.alert_id.in_(alert_ids)).delete()
+            db.query(models.AlertNotification).filter(models.AlertNotification.alert_id.in_(alert_ids)).delete(synchronize_session=False)
         
         # Delete related WhatsApp logs
         if alert_ids:
-            db.query(models.WhatsAppLog).filter(models.WhatsAppLog.alert_id.in_(alert_ids)).delete()
+            db.query(models.WhatsAppLog).filter(models.WhatsAppLog.alert_id.in_(alert_ids)).delete(synchronize_session=False)
         
         # Delete SLA records
-        db.query(models.SLARecord).filter(models.SLARecord.patient_id == patient_id).delete()
+        db.query(models.SLARecord).filter(models.SLARecord.patient_id == patient_id).delete(synchronize_session=False)
         
         # Delete chat messages
-        db.query(models.ChatMessage).filter(models.ChatMessage.patient_id == patient_id).delete()
+        db.query(models.ChatMessage).filter(models.ChatMessage.patient_id == patient_id).delete(synchronize_session=False)
         
         # Delete alerts
-        db.query(models.Alert).filter(models.Alert.patient_id == patient_id).delete()
+        db.query(models.Alert).filter(models.Alert.patient_id == patient_id).delete(synchronize_session=False)
         
         # Delete all vitals
-        db.query(models.Vitals).filter(models.Vitals.patient_id == patient_id).delete()
+        db.query(models.Vitals).filter(models.Vitals.patient_id == patient_id).delete(synchronize_session=False)
         
         # Delete patient first; audit only after successful commit.
         db.delete(patient)

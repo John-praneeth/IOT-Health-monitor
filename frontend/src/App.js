@@ -11,7 +11,7 @@ import AuditLogs from './pages/AuditLogs';
 import WhatsAppConfig from './pages/WhatsAppConfig';
 import SystemStatus from './pages/SystemStatus';
 import Login from './pages/Login';
-import { getMe } from './api';
+import { getMe, logout } from './api';
 import { API_BASE_LABEL } from './config';
 import './App.css';
 
@@ -48,7 +48,12 @@ export default function App() {
     });
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (e) {
+      // ignore
+    }
     localStorage.clear();
     setUser(null);
   };

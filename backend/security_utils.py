@@ -285,24 +285,22 @@ def validate_refresh_request(
     ua = _normalize_ua(user_agent)
     r = get_redis_client()
     if r:
-        state = _decode_hash(r.hgetall(_redis_refresh_key(user_id)))
+        state = _decode_hash(r.hgetall(_redis_session_meta_key(refresh_jti)))
         if not state:
             return False, 401, "missing_refresh_state"
-        stored_jti = state.get("jti", "")
+        if str(state.get("user_id")) != str(user_id):
+            return False, 401, "refresh_replay_detected"
         stored_ip = state.get("ip", "")
         stored_ua = state.get("ua", "")
-        if refresh_jti != stored_jti:
-            return False, 401, "refresh_replay_detected"
         if not _ip_matches(stored_ip, ip_address):
             return False, 403, "token_theft_ip_mismatch"
         if stored_ua != ua:
             return False, 403, "token_theft_user_agent_mismatch"
     else:
-        state = _refresh_state.get(user_id)
+        sessions = _sessions.get(user_id, [])
+        state = next((s for s in sessions if s.get("jti") == refresh_jti), None)
         if not state:
             return False, 401, "missing_refresh_state"
-        if state.get("jti") != refresh_jti:
-            return False, 401, "refresh_replay_detected"
         if not _ip_matches(str(state.get("ip", "")), ip_address):
             return False, 403, "token_theft_ip_mismatch"
         if str(state.get("ua", "")) != ua:

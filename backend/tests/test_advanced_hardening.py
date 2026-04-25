@@ -57,10 +57,10 @@ def test_refresh_token_replay_attack(client):
     ok_refresh = client.post("/auth/refresh", headers={"X-Forwarded-For": "4.4.4.4", "User-Agent": "UA-R1"})
     assert ok_refresh.status_code == 200
 
+    client.cookies.set(auth.REFRESH_COOKIE_NAME, old_refresh)
     replay = client.post(
         "/auth/refresh",
         headers={"X-Forwarded-For": "4.4.4.4", "User-Agent": "UA-R1"},
-        cookies={auth.REFRESH_COOKIE_NAME: old_refresh},
     )
     assert replay.status_code == 401
 
