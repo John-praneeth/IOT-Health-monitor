@@ -230,15 +230,7 @@ export default function SystemStatus() {
         <p>Live overview of services, database health, and alert activity</p>
       </div>
 
-      <div className="graphic-banner">
-        <div className="banner-title">Platform Reliability Matrix</div>
-        <div className="banner-subtitle">Real-time operational health of core infrastructure and message delivery.</div>
-        <div className="chip-row">
-          <span className="status-chip">DB Health</span>
-          <span className="status-chip">Redis Signal</span>
-          <span className="status-chip">WhatsApp Pipeline</span>
-        </div>
-      </div>
+
 
       {/* Toolbar */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 20 }}>

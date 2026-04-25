@@ -150,15 +150,7 @@ export default function Patients() {
         <p>Manage patients, assign specialist doctors & nurses</p>
       </div>
 
-      <div className="graphic-banner">
-        <div className="banner-title">Patient Flow and Assignment</div>
-        <div className="banner-subtitle">Coordinate room-level ownership, care teams, and bedside telemetry.</div>
-        <div className="chip-row">
-          <span className="status-chip">Room Tracking</span>
-          <span className="status-chip">Doctor Mapping</span>
-          <span className="status-chip">Nurse Handover</span>
-        </div>
-      </div>
+
 
       {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
 

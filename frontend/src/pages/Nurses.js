@@ -127,15 +127,7 @@ export default function Nurses() {
         <p>Manage nurses and view their assigned patients</p>
       </div>
 
-      <div className="graphic-banner">
-        <div className="banner-title">Nursing Operations Desk</div>
-        <div className="banner-subtitle">Department-level staffing and patient ownership continuity.</div>
-        <div className="chip-row">
-          <span className="status-chip">Department Roster</span>
-          <span className="status-chip">Shift-ready</span>
-          <span className="status-chip">Patient Coverage</span>
-        </div>
-      </div>
+
 
       {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
 

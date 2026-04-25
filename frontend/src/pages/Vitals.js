@@ -171,15 +171,7 @@ export default function Vitals() {
         </p>
       </div>
 
-      <div className="graphic-banner">
-        <div className="banner-title">Signal Intelligence View</div>
-        <div className="banner-subtitle">Vitals trends with anomaly highlighting for fast clinical decisions.</div>
-        <div className="chip-row">
-          <span className="status-chip">Heart Rate</span>
-          <span className="status-chip">SpO2</span>
-          <span className="status-chip">Temperature</span>
-        </div>
-      </div>
+
 
       <div className="filter-row">
         <select

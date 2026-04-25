@@ -134,15 +134,7 @@ export default function Doctors() {
         <p>Manage doctors — freelancer & hospital-based</p>
       </div>
 
-      <div className="graphic-banner">
-        <div className="banner-title">Doctor Network Control</div>
-        <div className="banner-subtitle">Specialization matrix, coverage, and assignment visibility in one place.</div>
-        <div className="chip-row">
-          <span className="status-chip">Specialty Pool</span>
-          <span className="status-chip">Freelancer Mix</span>
-          <span className="status-chip">Availability</span>
-        </div>
-      </div>
+
 
       {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
 

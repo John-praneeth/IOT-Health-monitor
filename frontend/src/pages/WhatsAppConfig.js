@@ -164,15 +164,7 @@ export default function WhatsAppConfig() {
         <p>Manage WhatsApp alert notifications for doctors and nurses</p>
       </div>
 
-      <div className="graphic-banner">
-        <div className="banner-title">Messaging Orchestration Center</div>
-        <div className="banner-subtitle">Control alert fanout, delivery state, and contact graph quality.</div>
-        <div className="chip-row">
-          <span className="status-chip">GREEN-API</span>
-          <span className="status-chip">Recipient Sync</span>
-          <span className="status-chip">Emergency Broadcast</span>
-        </div>
-      </div>
+
 
       {error && (
         <div style={{

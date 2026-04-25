@@ -30,15 +30,7 @@ export default function AuditLogs() {
         <p>System activity log — admin only</p>
       </div>
 
-      <div className="graphic-banner">
-        <div className="banner-title">Compliance Timeline</div>
-        <div className="banner-subtitle">Trace security-sensitive events and configuration actions instantly.</div>
-        <div className="chip-row">
-          <span className="status-chip">Access Events</span>
-          <span className="status-chip">Policy Trace</span>
-          <span className="status-chip">Forensic Ready</span>
-        </div>
-      </div>
+
 
       {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
 

@@ -231,15 +231,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="graphic-banner">
-        <div className="banner-title">Live Care Operations Pulse</div>
-        <div className="banner-subtitle">Track admissions, deteriorations, and response posture from one place.</div>
-        <div className="chip-row">
-          <span className="status-chip">Realtime Streaming</span>
-          <span className="status-chip">Alert Correlation</span>
-          <span className="status-chip">Role-aware Triage</span>
-        </div>
-      </div>
+
 
       {/* Doctor filter */}
       <div className="filter-row">

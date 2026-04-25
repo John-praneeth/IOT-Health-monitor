@@ -111,15 +111,7 @@ export default function Alerts() {
         </p>
       </div>
 
-      <div className="graphic-banner">
-        <div className="banner-title">Incident Escalation Command</div>
-        <div className="banner-subtitle">Prioritize unresolved alerts and keep response latency low.</div>
-        <div className="chip-row">
-          <span className="status-chip">Escalation Watch</span>
-          <span className="status-chip">Doctor Routing</span>
-          <span className="status-chip">WhatsApp Delivery</span>
-        </div>
-      </div>
+
 
       {/* Stats row */}
       <div className="stats-grid" style={{ gridTemplateColumns:'repeat(4,1fr)', marginBottom:24 }}>
