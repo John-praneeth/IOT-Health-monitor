@@ -186,56 +186,56 @@ export default function Vitals() {
   };
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>Vitals</h1>
-        <p>
-          Most recent 100 readings &nbsp;
-          <span className="live-tag">
-            <span className="live-dot" />
-            AUTO-REFRESH {lastRefresh && `· ${lastRefresh}`}
-          </span>
-        </p>
+    <div style={{ animation: 'reveal 0.4s ease-out' }}>
+      <div className="main-topbar">
+        <div>
+          <div className="main-title">Clinical Telemetry Feed</div>
+          <div className="main-subtitle">
+             <span className="live-tag">
+               <span className="live-dot" />
+               RECEIVING {lastRefresh && `· ${lastRefresh}`}
+             </span>
+          </div>
+        </div>
+        <div className="topbar-actions">
+           <button
+             className={`btn btn-sm ${showChart ? 'btn-primary' : ''}`}
+             style={{ background: showChart ? 'var(--primary)' : 'rgba(255,255,255,0.05)', color: showChart ? '#000' : '#e2e8f0', border: '1px solid var(--stroke)' }}
+             onClick={() => setShowChart(!showChart)}
+           >
+             {showChart ? '📊 Hide Analytics' : '📈 Show Analytics'}
+           </button>
+           <button className="btn btn-primary btn-sm" onClick={load}>⟳ Refresh Feed</button>
+        </div>
       </div>
 
-
-
-      <div className="filter-row">
+      <div className="filter-row" style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: '#64748b', fontWeight: 800 }}>SOURCE FILTER:</span>
         <select
-          style={{ background:'#1e293b', border:'1px solid #334155', color:'#e2e8f0',
-                   borderRadius:8, padding:'8px 12px', fontSize:13 }}
+          style={{ background:'rgba(0,0,0,0.2)', border:'1px solid rgba(255,255,255,0.1)', color:'#e2e8f0',
+                   borderRadius:8, padding:'6px 12px', fontSize:13, outline: 'none' }}
           value={filter}
           onChange={e => setFilter(e.target.value)}
         >
-          <option value="">All Patients</option>
+          <option value="">All Active Patients</option>
           {patients.map(p => <option key={p.patient_id} value={p.patient_id}>{p.name}</option>)}
         </select>
         <select
-          style={{ background:'#1e293b', border:'1px solid #334155', color:'#e2e8f0',
-                   borderRadius:8, padding:'8px 12px', fontSize:13 }}
+          style={{ background:'rgba(0,0,0,0.2)', border:'1px solid rgba(255,255,255,0.1)', color:'#e2e8f0',
+                   borderRadius:8, padding:'6px 12px', fontSize:13, outline: 'none' }}
           value={doctorFilter}
           onChange={e => setDoctorFilter(e.target.value)}
         >
-          <option value="">All Doctors</option>
+          <option value="">All Physician Groups</option>
           {doctors.map(d => <option key={d.doctor_id} value={d.doctor_id}>{d.name}</option>)}
         </select>
-        <button className="btn btn-primary btn-sm" onClick={load}>⟳ Refresh</button>
-        <button
-          className={`btn btn-sm ${showChart ? 'btn-primary' : ''}`}
-          style={{ background: showChart ? '#3b82f6' : '#1e293b', color: '#e2e8f0',
-                   border: '1px solid #334155', borderRadius: 8, padding: '8px 14px',
-                   cursor: 'pointer', fontSize: 13 }}
-          onClick={() => setShowChart(!showChart)}
-        >
-          📈 {showChart ? 'Hide' : 'View'} Trends
-        </button>
       </div>
 
       {/* ── Chart ────────────────────────────────────────────────── */}
       {showChart && vitals.length > 0 && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div className="card-header"><h2>📈 Vitals Trend</h2></div>
-              <div className="chart-3d-shell" style={{ height: 320, padding: '8px 16px 16px', margin: '0 16px 16px' }}>
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div className="card-header"><h2>Live Vitals Trend Analysis</h2></div>
+          <div style={{ height: 320, padding: '16px 24px 24px' }}>
             <Line data={chartData} options={chartOptions} />
           </div>
         </div>
@@ -243,51 +243,53 @@ export default function Vitals() {
 
       <div className="card">
         <div className="card-header">
-          <h2>Vitals Log</h2>
-          <span style={{ fontSize:12, color:'#64748b' }}>{vitals.length} records</span>
+          <h2>Telemetry Log</h2>
+          <span style={{ fontSize:11, color:'#64748b', fontWeight: 800 }}>{vitals.length} SEQUENTIAL RECORDS</span>
         </div>
         {loading ? <div className="spinner" /> : (
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th><th>Patient</th><th>Heart Rate</th>
-                <th>SpO₂</th><th>Temp (°F)</th><th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vitals.length === 0 && (
-                <tr><td colSpan={6} className="empty-state">No vitals recorded yet. Waiting for initial sensor data to arrive.</td></tr>
-              )}
-              {vitals.map(v => (
-                <tr key={v.vital_id} className={rowClass(v)}>
-                  <td>{v.timestamp ? toLocal(v.timestamp).toLocaleTimeString() : '—'}</td>
-                  <td>
-                    {patientName(v.patient_id)}
-                    {v.source === 'thingspeak' && !v.is_fallback && (
-                      <span style={{ marginLeft: 6, fontSize: 8, padding: '2px 4px', borderRadius: 4, background: 'rgba(59,130,246,0.3)', color: '#93c5fd' }}>IOT-LIVE</span>
-                    )}
-                  </td>
-                  <td style={{ color: (v.heart_rate > 110 || v.heart_rate < 50) ? '#f87171' : '#34d399' }}>
-                    {v.heart_rate} bpm
-                  </td>
-                  <td style={{ color: v.spo2 < 90 ? '#f87171' : '#34d399' }}>
-                    {v.spo2}%
-                  </td>
-                  <td style={{ color: (v.temperature > 101 || v.temperature < 96) ? '#fbbf24' : '#e2e8f0' }}>
-                    {v.temperature}°F
-                  </td>
-                  <td>
-                    {rowClass(v) === 'vital-critical' && <span className="badge badge-red">Critical</span>}
-                    {rowClass(v) === 'vital-warning'  && <span className="badge badge-amber">Warning</span>}
-                    {rowClass(v) === ''               && <span className="badge badge-green">Normal</span>}
-                    {v.source === 'thingspeak' && !v.is_fallback && (
-                      <div style={{ fontSize: 9, color: '#93c5fd', marginTop: 4, fontWeight: '600' }}>✓ Hardware Confirmed</div>
-                    )}
-                  </td>
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th><th>Patient Identity</th><th>Pulse (BPM)</th>
+                  <th>SpO₂ (%)</th><th>Temp (°F)</th><th>Diagnostic State</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {vitals.length === 0 && (
+                  <tr><td colSpan={6} className="empty-state">No real-time telemetry received yet.</td></tr>
+                )}
+                {vitals.map(v => (
+                  <tr key={v.vital_id}>
+                    <td><span style={{ color: '#64748b', fontWeight: 600 }}>{v.timestamp ? toLocal(v.timestamp).toLocaleTimeString() : '—'}</span></td>
+                    <td>
+                      <strong>{patientName(v.patient_id)}</strong>
+                      {v.source === 'thingspeak' && !v.is_fallback && (
+                        <span style={{ marginLeft: 8, fontSize: 8, padding: '2px 4px', borderRadius: 4, background: 'rgba(34, 211, 238, 0.1)', color: '#22d3ee', border: '1px solid rgba(34, 211, 238, 0.2)' }}>IOT</span>
+                      )}
+                    </td>
+                    <td style={{ fontWeight: 800, color: (v.heart_rate > 110 || v.heart_rate < 50) ? '#f43f5e' : '#34d399' }}>
+                      {v.heart_rate}
+                    </td>
+                    <td style={{ fontWeight: 800, color: v.spo2 < 90 ? '#f43f5e' : '#34d399' }}>
+                      {v.spo2}%
+                    </td>
+                    <td style={{ fontWeight: 800, color: (v.temperature > 101 || v.temperature < 96) ? '#fbbf24' : 'inherit' }}>
+                      {v.temperature}°
+                    </td>
+                    <td>
+                      <span className={`badge ${rowClass(v)==='vital-critical'?'badge-red':rowClass(v)==='vital-warning'?'badge-amber':'badge-green'}`}>
+                        {rowClass(v) === 'vital-critical' ? 'CRITICAL' : rowClass(v) === 'vital-warning' ? 'WARNING' : 'STABLE'}
+                      </span>
+                      {v.source === 'thingspeak' && !v.is_fallback && (
+                        <span style={{ fontSize: 9, color: '#22d3ee', marginLeft: 8, fontWeight: 700 }}>✓ HW</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

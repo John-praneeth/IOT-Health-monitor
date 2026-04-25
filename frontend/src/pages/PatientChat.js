@@ -74,51 +74,48 @@ export default function PatientChat({ patientId, patientName, onClose }) {
   };
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.container} onClick={e => e.stopPropagation()}>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="card" style={{ width: 520, height: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div style={styles.header}>
-          <div>
-            <span style={{ fontSize: 18, fontWeight: 700 }}>💬 Treatment Chat</span>
-            <span style={styles.patientBadge}>🛏️ {patientName}</span>
+        <div className="card-header">
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <span style={{ fontSize: 18, fontWeight: 700 }}>💬 Treatment Log</span>
+            <span className="badge badge-blue" style={{ background: 'rgba(34, 211, 238, 0.1)' }}>{patientName}</span>
           </div>
-          <button onClick={onClose} style={styles.closeBtn}>✕</button>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:'#94a3b8', fontSize:20, cursor:'pointer' }}>✕</button>
         </div>
 
-        {error && <div style={styles.error}>⚠️ {error}</div>}
+        {error && <div style={{ background:'rgba(244,63,94,0.1)', color:'#fca5a5', padding:'10px 20px', fontSize:13 }}>⚠️ {error}</div>}
 
         {/* Messages */}
-        <div style={styles.messageArea}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {messages.length === 0 && (
-            <div style={styles.emptyState}>
-              <span style={{ fontSize: 40 }}>💬</span>
-              <p style={{ color: '#94a3b8', marginTop: 8 }}>No messages yet. Start the conversation about this patient's treatment.</p>
+            <div className="empty-state">
+              <span style={{ fontSize: 40, opacity: 0.5 }}>💬</span>
+              <p style={{ marginTop: 12 }}>No messages initialized for this patient's treatment session.</p>
             </div>
           )}
           {messages.map((msg) => {
             const isMe = msg.sender_username === currentUser;
             return (
               <div key={msg.message_id} style={{
-                ...styles.messageBubbleRow,
+                display: 'flex', width: '100%',
                 justifyContent: isMe ? 'flex-end' : 'flex-start',
               }}>
                 <div style={{
-                  ...styles.messageBubble,
-                  background: isMe ? '#1e3a5f' : '#1e293b',
-                  borderLeft: isMe ? 'none' : `3px solid ${ROLE_COLORS[msg.sender_role] || '#64748b'}`,
-                  borderRight: isMe ? `3px solid ${ROLE_COLORS[msg.sender_role] || '#64748b'}` : 'none',
-                  alignItems: isMe ? 'flex-end' : 'flex-start',
+                  maxWidth: '85%', padding: '14px 18px', borderRadius: 16,
+                  background: isMe ? 'rgba(34, 211, 238, 0.08)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${isMe ? 'rgba(34, 211, 238, 0.2)' : 'rgba(255,255,255,0.06)'}`,
+                  borderLeft: isMe ? undefined : `4px solid ${ROLE_COLORS[msg.sender_role] || '#64748b'}`,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
                 }}>
-                  <div style={styles.senderRow}>
-                    <span style={{ color: ROLE_COLORS[msg.sender_role] || '#94a3b8', fontWeight: 600, fontSize: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ color: ROLE_COLORS[msg.sender_role] || '#94a3b8', fontWeight: 800, fontSize: 11, textTransform: 'uppercase' }}>
                       {ROLE_ICONS[msg.sender_role] || '👤'} {msg.sender_username}
                     </span>
-                    <span style={styles.roleBadge(msg.sender_role)}>
-                      {msg.sender_role}
-                    </span>
                   </div>
-                  <div style={styles.messageText}>{msg.message}</div>
-                  <div style={styles.timestamp}>{formatTime(msg.created_at)}</div>
+                  <div style={{ color: '#f1f5f9', fontSize: 14, lineHeight: 1.5 }}>{msg.message}</div>
+                  <div style={{ color: '#475569', fontSize: 10, marginTop: 8, textAlign: 'right', fontWeight: 600 }}>{formatTime(msg.created_at)}</div>
                 </div>
               </div>
             );
@@ -127,32 +124,25 @@ export default function PatientChat({ patientId, patientName, onClose }) {
         </div>
 
         {/* Input */}
-        <form onSubmit={handleSend} style={styles.inputArea}>
-          <div style={styles.inputRow}>
-            <span style={{ color: ROLE_COLORS[currentRole] || '#94a3b8', fontSize: 12, marginRight: 8 }}>
-              {ROLE_ICONS[currentRole] || '👤'} {currentUser}
-            </span>
-          </div>
-          <div style={styles.inputRow}>
+        <form onSubmit={handleSend} style={{ padding: 20, background: 'rgba(0,0,0,0.15)', borderTop: '1px solid var(--stroke)' }}>
+          <div style={{ display: 'flex', gap: 12 }}>
             <input
               ref={inputRef}
               type="text"
               value={text}
               onChange={e => setText(e.target.value)}
-              placeholder="Type your message about treatment..."
-              style={styles.input}
+              placeholder="Transmit medical note..."
+              style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--stroke)', borderRadius: 12, padding: '12px 16px', color: '#fff', outline: 'none' }}
               disabled={sending}
               maxLength={2000}
             />
             <button
               type="submit"
-              style={{
-                ...styles.sendBtn,
-                opacity: sending || !text.trim() ? 0.5 : 1,
-              }}
+              className="btn btn-primary"
+              style={{ padding: '0 24px', opacity: sending || !text.trim() ? 0.5 : 1 }}
               disabled={sending || !text.trim()}
             >
-              {sending ? '⏳' : '📤'} Send
+              {sending ? '⏳' : 'SEND'}
             </button>
           </div>
         </form>

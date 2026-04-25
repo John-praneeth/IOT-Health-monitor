@@ -144,34 +144,37 @@ export default function Patients() {
   };
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>Patients</h1>
-        <p>Manage patients, assign specialist doctors & nurses</p>
+    <div style={{ animation: 'reveal 0.4s ease-out' }}>
+      <div className="main-topbar">
+        <div>
+          <div className="main-title">Patient Management</div>
+          <div className="main-subtitle">Directory of clinical admissions and assignments</div>
+        </div>
+        <div className="topbar-actions">
+           {canCreate && (
+             <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(!showAdd)}>
+               {showAdd ? '✕ Close Portal' : '+ Register Patient'}
+             </button>
+           )}
+        </div>
       </div>
 
-
-
-      {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
-
-      <div className="filter-row">
-        {canCreate && (
-          <button className="btn btn-primary" onClick={() => setShowAdd(!showAdd)}>
-            {showAdd ? '✕ Cancel' : '+ Add Patient'}
-          </button>
-        )}
-      </div>
+      {error && (
+        <div className="card" style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.2)', padding: 12, marginBottom: 20, borderRadius: 12, color: '#fda4af', fontSize: 13 }}>
+          ⚠️ {error}
+        </div>
+      )}
 
       {/* Add Patient Form */}
       {canCreate && showAdd && (
-        <div className="card" style={{ marginBottom: 24 }}>
-          <div className="card-header"><h2>New Patient</h2></div>
+        <div className="card">
+          <div className="card-header"><h2>New Patient Registration</h2></div>
           <form onSubmit={handleSubmit}>
-            <div className="form-grid">
+            <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, padding: 24 }}>
               {[
                 { key:'name',        label:'Full Name',   type:'text',   required:true },
                 { key:'age',         label:'Age',         type:'number', required:true },
-                { key:'room_number', label:'Room Number', type:'text',   required:true },
+                { key:'room_number', label:'Room No.',    type:'text',   required:true },
               ].map(f => (
                 <div className="form-group" key={f.key}>
                   <label>{f.label}</label>
@@ -182,157 +185,155 @@ export default function Patients() {
               <div className="form-group">
                 <label>Hospital</label>
                 <select value={form.hospital_id} onChange={e => setForm({ ...form, hospital_id: e.target.value, assigned_doctor: '', assigned_nurse: '' })}>
-                  <option value="">— None —</option>
+                  <option value="">— Select Site —</option>
                   {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label>Assign Doctor {form.hospital_id && <span style={{ color:'#64748b', fontWeight:400, fontSize:11 }}>(filtered by hospital)</span>}</label>
+                <label>Assign Doctor</label>
                 <select value={form.assigned_doctor} onChange={e => setForm({ ...form, assigned_doctor: e.target.value })}>
-                  <option value="">— None —</option>
+                  <option value="">— Not Assigned —</option>
                   {formDoctors.map(d => <option key={d.doctor_id} value={d.doctor_id}>{d.name} ({d.specialization || 'N/A'})</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label>Assign Nurse {form.hospital_id && <span style={{ color:'#64748b', fontWeight:400, fontSize:11 }}>(filtered by hospital)</span>}</label>
+                <label>Assign Nurse</label>
                 <select value={form.assigned_nurse} onChange={e => setForm({ ...form, assigned_nurse: e.target.value })}>
-                  <option value="">— None —</option>
+                  <option value="">— Not Assigned —</option>
                   {formNurses.map(n => <option key={n.nurse_id} value={n.nurse_id}>{n.name}</option>)}
                 </select>
               </div>
             </div>
-            <div className="form-actions">
-              <button type="submit" className="btn btn-primary">Save Patient</button>
+            <div style={{ padding: '0 24px 24px', display: 'flex', gap: 12 }}>
+              <button type="submit" className="btn btn-primary">Initialize Patient Record</button>
+              <button type="button" className="btn" style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8' }} onClick={() => setShowAdd(false)}>Cancel</button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Specialization filter for doctor assignment */}
-      <div className="filter-row">
-        <span style={{ color: '#94a3b8', fontSize: 13 }}>Filter doctors by specialization:</span>
-        <select
-          style={{ background:'#1e293b', border:'1px solid #334155', color:'#e2e8f0',
-                   borderRadius:8, padding:'6px 10px', fontSize:13 }}
-          value={specFilter}
-          onChange={e => setSpecFilter(e.target.value)}>
-          <option value="">All Specializations</option>
-          {specializations.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
-
       {/* Table */}
       <div className="card">
         <div className="card-header">
-          <h2>All Patients ({patients.length})</h2>
+          <h2>Clinical Directory ({patients.length})</h2>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 800 }}>FILTER:</span>
+            <select
+              style={{ background:'rgba(0,0,0,0.2)', border:'1px solid rgba(255,255,255,0.1)', color:'#e2e8f0',
+                       borderRadius:8, padding:'4px 10px', fontSize:12, outline: 'none' }}
+              value={specFilter}
+              onChange={e => setSpecFilter(e.target.value)}>
+              <option value="">All Specializations</option>
+              {specializations.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
         </div>
         {loading ? <div className="spinner" /> : (
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th><th>Name</th><th>Age</th><th>Room</th>
-                <th>Hospital</th><th>Doctor</th><th>Nurse</th><th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {patients.length === 0 && (
-                <tr><td colSpan={8} className="empty-state">No patients found.</td></tr>
-              )}
-              {patients.map(p => (
-                <tr key={p.patient_id}>
-                  <td>#{p.patient_id}</td>
-                  <td><strong>{p.name}</strong></td>
-                  <td>{p.age}</td>
-                  <td>{p.room_number}</td>
-                  <td>{p.hospital_name || '—'}</td>
-                  <td>
-                    {canAssignDoctor ? (
-                      <select className="inline-select" value={p.assigned_doctor || ''}
-                        onChange={e => handleAssignDoctor(p.patient_id, e.target.value)}>
-                        <option value="">— None —</option>
-                        {doctors
-                          .filter(d => !specFilter || d.specialization === specFilter || String(d.doctor_id) === String(p.assigned_doctor))
-                          .map(d => (
-                          <option key={d.doctor_id} value={d.doctor_id}>
-                            {d.name} ({d.specialization || 'N/A'}) {d.is_freelancer ? '🟢' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span>{p.doctor_name || '—'}</span>
-                    )}
-                  </td>
-                  <td>
-                    {canAssignNurse ? (
-                      <select className="inline-select" value={p.assigned_nurse || ''}
-                        onChange={e => handleAssignNurse(p.patient_id, e.target.value)}>
-                        <option value="">— None —</option>
-                        {nurses.map(n => <option key={n.nurse_id} value={n.nurse_id}>{n.name}</option>)}
-                      </select>
-                    ) : (
-                      <span>{p.nurse_name || '—'}</span>
-                    )}
-                  </td>
-                  <td style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                    <button className="btn btn-primary btn-sm"
-                      onClick={() => showVitals(p)} title="View latest vitals">
-                      💓 Vitals
-                    </button>
-                    <button className="btn btn-primary btn-sm"
-                      onClick={() => setChatPatient({ patient_id: p.patient_id, name: p.name })}
-                      title="Open treatment chat">
-                      💬 Chat
-                    </button>
-                    {canEdit && (
-                      <button className="btn btn-success btn-sm" onClick={() => openEdit(p)}>
-                        ✏️ Edit
-                      </button>
-                    )}
-                    {canDelete && (
-                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(p.patient_id)}>
-                        🗑
-                      </button>
-                    )}
-                  </td>
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th><th>Name</th><th>Age</th><th>Room</th>
+                  <th>Hospital</th><th>Primary Physician</th><th>Assigned Nurse</th><th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {patients.length === 0 && (
+                  <tr><td colSpan={8} className="empty-state">No active patient records found.</td></tr>
+                )}
+                {patients.map(p => (
+                  <tr key={p.patient_id}>
+                    <td><span style={{ color: '#64748b', fontWeight: 700 }}>#{p.patient_id}</span></td>
+                    <td><strong>{p.name}</strong></td>
+                    <td>{p.age}</td>
+                    <td><span className="badge badge-blue" style={{ background: 'rgba(34, 211, 238, 0.05)' }}>{p.room_number}</span></td>
+                    <td>{p.hospital_name || '—'}</td>
+                    <td>
+                      {canAssignDoctor ? (
+                        <select className="inline-select" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff', fontSize: 12, padding: '4px 8px' }}
+                          value={p.assigned_doctor || ''}
+                          onChange={e => handleAssignDoctor(p.patient_id, e.target.value)}>
+                          <option value="">— Unassigned —</option>
+                          {doctors
+                            .filter(d => !specFilter || d.specialization === specFilter || String(d.doctor_id) === String(p.assigned_doctor))
+                            .map(d => (
+                            <option key={d.doctor_id} value={d.doctor_id}>
+                              {d.name} ({d.specialization || 'N/A'})
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span>{p.doctor_name || '—'}</span>
+                      )}
+                    </td>
+                    <td>
+                      {canAssignNurse ? (
+                        <select className="inline-select" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff', fontSize: 12, padding: '4px 8px' }}
+                          value={p.assigned_nurse || ''}
+                          onChange={e => handleAssignNurse(p.patient_id, e.target.value)}>
+                          <option value="">— Unassigned —</option>
+                          {nurses.map(n => <option key={n.nurse_id} value={n.nurse_id}>{n.name}</option>)}
+                        </select>
+                      ) : (
+                        <span>{p.nurse_name || '—'}</span>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ display:'flex', gap:6 }}>
+                        <button className="btn btn-primary btn-sm" style={{ padding: '4px 8px', fontSize: 11 }}
+                          onClick={() => showVitals(p)} title="Latest Vitals">💓</button>
+                        <button className="btn btn-primary btn-sm" style={{ padding: '4px 8px', fontSize: 11 }}
+                          onClick={() => setChatPatient({ patient_id: p.patient_id, name: p.name })} title="Patient Chat">💬</button>
+                        {canEdit && (
+                          <button className="btn btn-success btn-sm" style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => openEdit(p)}>✏️</button>
+                        )}
+                        {canDelete && (
+                          <button className="btn btn-danger btn-sm" style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => handleDelete(p.patient_id)}>🗑</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
       {/* Vitals Modal */}
       {vitalsModal && (
         <div className="modal-backdrop" onClick={() => setVitalsModal(null)}>
-          <div className="modal-card" style={{ padding:24, width:380 }} onClick={e => e.stopPropagation()}>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:16 }}>
-              <h3 style={{ color:'#e2e8f0', margin:0 }}>💓 {vitalsModal.patient.name}</h3>
+          <div className="card" style={{ width: 400, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
+            <div className="card-header">
+              <h2>💓 {vitalsModal.patient.name}</h2>
               <button onClick={() => setVitalsModal(null)} style={{ background:'none', border:'none', color:'#94a3b8', fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
-            {vitalsModal.vitals ? (
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
-                <div style={{ background:'#0f172a', borderRadius:10, padding:14, textAlign:'center' }}>
-                  <div style={{ fontSize:12, color:'#94a3b8' }}>Heart Rate</div>
-                  <div style={{ fontSize:24, fontWeight:700, color: vitalsModal.vitals.heart_rate > 110 || vitalsModal.vitals.heart_rate < 50 ? '#f87171' : '#34d399' }}>
-                    {vitalsModal.vitals.heart_rate} <span style={{ fontSize:12 }}>bpm</span>
+            <div style={{ padding: 24 }}>
+              {vitalsModal.vitals ? (
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                  <div style={{ background:'rgba(0,0,0,0.2)', borderRadius:12, padding:16, textAlign:'center', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize:10, color:'#94a3b8', fontWeight: 800 }}>HEART RATE</div>
+                    <div style={{ fontSize:24, fontWeight:800, color: vitalsModal.vitals.heart_rate > 110 || vitalsModal.vitals.heart_rate < 50 ? '#f43f5e' : '#34d399', marginTop: 4 }}>
+                      {vitalsModal.vitals.heart_rate} <span style={{ fontSize:11, opacity: 0.6 }}>BPM</span>
+                    </div>
+                  </div>
+                  <div style={{ background:'rgba(0,0,0,0.2)', borderRadius:12, padding:16, textAlign:'center', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize:10, color:'#94a3b8', fontWeight: 800 }}>SPO₂</div>
+                    <div style={{ fontSize:24, fontWeight:800, color: vitalsModal.vitals.spo2 < 90 ? '#f43f5e' : '#34d399', marginTop: 4 }}>
+                      {vitalsModal.vitals.spo2}<span style={{ fontSize:11, opacity: 0.6 }}>%</span>
+                    </div>
+                  </div>
+                  <div style={{ background:'rgba(0,0,0,0.2)', borderRadius:12, padding:16, textAlign:'center', border: '1px solid rgba(255,255,255,0.05)', gridColumn: 'span 2' }}>
+                    <div style={{ fontSize:10, color:'#94a3b8', fontWeight: 800 }}>BODY TEMPERATURE</div>
+                    <div style={{ fontSize:24, fontWeight:800, color: vitalsModal.vitals.temperature > 101 ? '#fbbf24' : '#f1f5f9', marginTop: 4 }}>
+                      {vitalsModal.vitals.temperature}<span style={{ fontSize:11, opacity: 0.6 }}>°F</span>
+                    </div>
                   </div>
                 </div>
-                <div style={{ background:'#0f172a', borderRadius:10, padding:14, textAlign:'center' }}>
-                  <div style={{ fontSize:12, color:'#94a3b8' }}>SpO₂</div>
-                  <div style={{ fontSize:24, fontWeight:700, color: vitalsModal.vitals.spo2 < 90 ? '#f87171' : '#34d399' }}>
-                    {vitalsModal.vitals.spo2}<span style={{ fontSize:12 }}>%</span>
-                  </div>
-                </div>
-                <div style={{ background:'#0f172a', borderRadius:10, padding:14, textAlign:'center' }}>
-                  <div style={{ fontSize:12, color:'#94a3b8' }}>Temperature</div>
-                  <div style={{ fontSize:24, fontWeight:700, color: vitalsModal.vitals.temperature > 101 ? '#fbbf24' : '#e2e8f0' }}>
-                    {vitalsModal.vitals.temperature}<span style={{ fontSize:12 }}>°F</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <p style={{ color:'#64748b', textAlign:'center' }}>No vitals recorded yet</p>
-            )}
+              ) : (
+                <p style={{ color:'#64748b', textAlign:'center', padding: 20 }}>No clinical data available for this session.</p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -346,44 +347,45 @@ export default function Patients() {
         />
       )}
 
+      {/* Edit Modal */}
       {editingPatient && (
         <div className="modal-backdrop" onClick={() => setEditingPatient(null)}>
-          <div className="modal-card" style={{ padding:24, width:520 }} onClick={e => e.stopPropagation()}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
-              <h3 style={{ color:'#e2e8f0', margin:0 }}>✏️ Edit Patient</h3>
+          <div className="card" style={{ width: 500, maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            <div className="card-header">
+              <h2>✏️ Update Patient Record</h2>
               <button onClick={() => setEditingPatient(null)} style={{ background:'none', border:'none', color:'#94a3b8', fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
-            <div className="form-grid" style={{ padding:0 }}>
-              <div className="form-group"><label>Name</label><input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></div>
+            <div className="form-grid" style={{ padding: 24, gap: 16 }}>
+              <div className="form-group"><label>Full Name</label><input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></div>
               <div className="form-group"><label>Age</label><input type="number" value={editForm.age} onChange={e => setEditForm({ ...editForm, age: e.target.value })} /></div>
-              <div className="form-group"><label>Room</label><input value={editForm.room_number} onChange={e => setEditForm({ ...editForm, room_number: e.target.value })} /></div>
+              <div className="form-group"><label>Room Number</label><input value={editForm.room_number} onChange={e => setEditForm({ ...editForm, room_number: e.target.value })} /></div>
               <div className="form-group">
-                <label>Hospital</label>
+                <label>Hospital Site</label>
                 <select value={editForm.hospital_id} onChange={e => setEditForm({ ...editForm, hospital_id: e.target.value, assigned_doctor: '', assigned_nurse: '' })}>
                   <option value="">— None —</option>
                   {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label>Doctor</label>
+                <label>Primary Doctor</label>
                 <select value={editForm.assigned_doctor} onChange={e => setEditForm({ ...editForm, assigned_doctor: e.target.value })}>
-                  <option value="">— None —</option>
+                  <option value="">— Not Assigned —</option>
                   {(editForm.hospital_id ? doctors.filter(d => String(d.hospital_id) === String(editForm.hospital_id) || d.is_freelancer || String(d.doctor_id) === editForm.assigned_doctor) : doctors)
                     .map(d => <option key={d.doctor_id} value={d.doctor_id}>{d.name}</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label>Nurse</label>
+                <label>On-Call Nurse</label>
                 <select value={editForm.assigned_nurse} onChange={e => setEditForm({ ...editForm, assigned_nurse: e.target.value })}>
-                  <option value="">— None —</option>
+                  <option value="">— Not Assigned —</option>
                   {(editForm.hospital_id ? nurses.filter(n => String(n.hospital_id) === String(editForm.hospital_id) || String(n.nurse_id) === editForm.assigned_nurse) : nurses)
                     .map(n => <option key={n.nurse_id} value={n.nurse_id}>{n.name}</option>)}
                 </select>
               </div>
             </div>
-            <div style={{ display:'flex', gap:10, marginTop:12 }}>
-              <button className="btn btn-success" onClick={saveEdit}>Save Changes</button>
-              <button className="btn" style={{ background:'#334155', color:'#e2e8f0' }} onClick={() => setEditingPatient(null)}>Cancel</button>
+            <div style={{ padding: '0 24px 24px', display: 'flex', gap: 12 }}>
+              <button className="btn btn-primary" onClick={saveEdit}>Commit Changes</button>
+              <button className="btn" style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8' }} onClick={() => setEditingPatient(null)}>Cancel</button>
             </div>
           </div>
         </div>

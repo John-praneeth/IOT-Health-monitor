@@ -121,161 +121,181 @@ export default function Nurses() {
   };
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>👩‍⚕️ Nurses</h1>
-        <p>Manage nurses and view their assigned patients</p>
+    <div style={{ animation: 'reveal 0.4s ease-out' }}>
+      <div className="main-topbar">
+        <div>
+          <div className="main-title">Nursing Staff Registry</div>
+          <div className="main-subtitle">Care unit assignments and shift management</div>
+        </div>
+        <div className="topbar-actions">
+           {canManage && (
+             <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(!showAdd)}>
+               {showAdd ? '✕ Close Portal' : '+ Register Nurse'}
+             </button>
+           )}
+        </div>
       </div>
 
-
-
-      {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
-
-      {canManage && (
-        <button className="btn btn-primary" style={{ marginBottom:16 }} onClick={() => setShowAdd(!showAdd)}>
-          {showAdd ? '✕ Cancel' : '+ Add Nurse'}
-        </button>
-      )}
+      {error && <div style={{ color:'#fca5a5', background: 'rgba(244,63,94,0.1)', padding: 12, borderRadius: 10, marginBottom:16 }}>⚠️ {error}</div>}
 
       {canManage && showAdd && (
-        <div className="card" style={{ marginBottom: 24 }}>
-          <div className="card-header"><h2>New Nurse</h2></div>
-          <form onSubmit={handleSubmit}>
-            <div className="form-grid">
+        <div className="card">
+          <div className="card-header"><h2>Register New Nursing Staff</h2></div>
+          <form onSubmit={handleSubmit} style={{ padding: 24 }}>
+            <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
               <div className="form-group">
-                <label>Full Name</label>
+                <label>Full Legal Name</label>
                 <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Jane Doe" />
               </div>
               <div className="form-group">
-                <label>Department</label>
+                <label>Assigned Department</label>
                 <select value={form.department} onChange={e => setForm({ ...form, department: e.target.value })}>
                   {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label>Login Username <span style={{ color:'#64748b', fontWeight:400, fontSize:11 }}>(optional — for nurse login access)</span></label>
+                <label>Access Identifier</label>
                 <input value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="e.g. nurse.jane" autoComplete="off" />
               </div>
               <div className="form-group">
-                <label>Login Password <span style={{ color:'#64748b', fontWeight:400, fontSize:11 }}>(min 6 chars)</span></label>
+                <label>Security Key</label>
                 <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="••••••" autoComplete="new-password" disabled={!form.username} />
               </div>
               <div className="form-group">
-                <label>Phone</label>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <select value={countryCode} onChange={e => setCountryCode(e.target.value)}
-                    style={{ width: 'auto', flexShrink: 0 }}>
+                <label>Primary Phone</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <select value={countryCode} onChange={e => setCountryCode(e.target.value)} style={{ width: 'auto' }}>
                     {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
                   </select>
-                  <input value={form.phone}
-                    onChange={e => setForm({ ...form, phone: e.target.value.replace(/[^0-9]/g, '') })}
-                    placeholder="9876543210" style={{ flex: 1, minWidth: 0, width: 'auto' }} />
+                  <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value.replace(/[^0-9]/g, '') })} placeholder="Phone number" style={{ flex: 1 }} />
                 </div>
-                {form.phone.trim() && (
-                  <small style={{ color:'#64748b', fontFamily:'monospace' }}>
-                    → {countryCode}{form.phone.replace(/^0+/, '')}
-                  </small>
-                )}
               </div>
               <div className="form-group">
-                <label>Email</label>
+                <label>Work Email</label>
                 <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="jane@hospital.com" />
               </div>
               <div className="form-group">
-                <label>Hospital</label>
+                <label>Facility Affiliation</label>
                 <select value={form.hospital_id} onChange={e => setForm({ ...form, hospital_id: e.target.value })}>
-                  <option value="">— None —</option>
+                  <option value="">— Select Site —</option>
                   {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}
                 </select>
               </div>
             </div>
-            <div className="form-actions">
-              <button type="submit" className="btn btn-primary">Save Nurse</button>
+            <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
+              <button type="submit" className="btn btn-primary">Save Staff Member</button>
+              <button type="button" className="btn" style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8' }} onClick={() => setShowAdd(false)}>Cancel</button>
             </div>
           </form>
         </div>
       )}
 
       <div className="card">
-        <div className="card-header"><h2>All Nurses ({nurses.length})</h2></div>
+        <div className="card-header"><h2>Care Team Roster ({nurses.length})</h2></div>
         {loading ? <div className="spinner" /> : (
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th><th>Name</th><th>Department</th><th>Hospital</th>
-                <th>Phone</th><th>Email</th><th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {nurses.length === 0 && (
-                <tr><td colSpan={7} className="empty-state">No nurses yet.</td></tr>
-              )}
-              {nurses.map(n => (
-                <React.Fragment key={n.nurse_id}>
-                  <tr>
-                    <td>#{n.nurse_id}</td>
-                    <td><strong>{n.name}</strong></td>
-                    <td>
-                      {n.department ? (
-                        <span className="badge badge-blue">{n.department}</span>
-                      ) : '—'}
-                    </td>
-                    <td>{n.hospital_name || '—'}</td>
-                    <td>{n.phone || '—'}</td>
-                    <td>{n.email || '—'}</td>
-                    <td style={{ display:'flex', gap:6 }}>
-                      <button className="btn btn-primary btn-sm" onClick={() => togglePatients(n.nurse_id)}>
-                        {expanded === n.nurse_id ? '▲ Hide' : '▼ Patients'}
-                      </button>
-                      {canEditNurse(n.nurse_id) && (
-                        <button className="btn btn-success btn-sm" onClick={() => openEdit(n)}>✏️ Edit</button>
-                      )}
-                      {canManage && (
-                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(n.nurse_id)}>🗑</button>
-                      )}
-                    </td>
-                  </tr>
-                  {expanded === n.nurse_id && (
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Identity</th><th>Care Unit</th><th>Assigned Site</th>
+                  <th>Contact Registry</th><th>Status</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nurses.length === 0 && (
+                  <tr><td colSpan={6} className="empty-state">No nursing staff records initialized.</td></tr>
+                )}
+                {nurses.map(n => (
+                  <React.Fragment key={n.nurse_id}>
                     <tr>
-                      <td colSpan={7} style={{ background:'#1e293b', padding:16 }}>
-                        {patients.length === 0 ? (
-                          <em style={{ color:'#94a3b8' }}>No patients assigned to this nurse.</em>
-                        ) : (
-                          <table style={{ marginBottom:0 }}>
-                            <thead><tr><th>Patient</th><th>Age</th><th>Room</th></tr></thead>
-                            <tbody>
-                              {patients.map(p => (
-                                <tr key={p.patient_id}>
-                                  <td>{p.name}</td><td>{p.age}</td><td>{p.room_number}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
+                      <td>
+                        <strong>{n.name}</strong>
+                        <div style={{ fontSize: 10, color: '#64748b' }}>ST-#{n.nurse_id}</div>
+                      </td>
+                      <td>
+                        <span className="badge badge-blue">{n.department || 'General'}</span>
+                      </td>
+                      <td>{n.hospital_name || <span style={{ color: '#64748b' }}>— External</span>}</td>
+                      <td>
+                         <div style={{ fontSize: 13 }}>{n.phone || '—'}</div>
+                         <div style={{ fontSize: 11, color: '#64748b' }}>{n.email || ''}</div>
+                      </td>
+                      <td>
+                        <span style={{ color: 'var(--success)', fontWeight: 800, fontSize: 11 }}>📡 ON-CALL</span>
+                      </td>
+                      <td>
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button className="btn btn-primary btn-sm" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => togglePatients(n.nurse_id)}>
+                            {expanded === n.nurse_id ? '▲ HIDE' : '▼ WARD'}
+                          </button>
+                          {canEditNurse(n.nurse_id) && (
+                            <button className="btn btn-success btn-sm" style={{ padding: '4px 8px' }} onClick={() => openEdit(n)}>✏️</button>
+                          )}
+                          {canManage && (
+                            <button className="btn btn-danger btn-sm" style={{ padding: '4px 8px' }} onClick={() => handleDelete(n.nurse_id)}>🗑</button>
+                          )}
+                        </div>
                       </td>
                     </tr>
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
+                    {expanded === n.nurse_id && (
+                      <tr>
+                        <td colSpan={6} style={{ background:'rgba(0,0,0,0.2)', padding: 24 }}>
+                          <div className="card" style={{ marginBottom: 0, border: '1px dashed var(--stroke)' }}>
+                            <div className="card-header" style={{ padding: '12px 20px' }}><h3 style={{ fontSize: 14, margin: 0 }}>Active Care Ward</h3></div>
+                            {patients.length === 0 ? (
+                              <div style={{ padding: 20, textAlign: 'center', color: '#64748b', fontSize: 12 }}>No patients currently assigned to this staff member.</div>
+                            ) : (
+                              <table style={{ marginBottom:0 }}>
+                                <thead><tr><th>Patient Identity</th><th>Admitted Site</th><th>Room</th></tr></thead>
+                                <tbody>
+                                  {patients.map(p => (
+                                    <tr key={p.patient_id}>
+                                      <td>{p.name}</td><td>{p.hospital_name || '—'}</td><td>{p.room_number}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
       {editing && (
         <div className="modal-backdrop" onClick={() => setEditing(null)}>
-          <div className="modal-card" style={{ padding:24, width:520 }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ color:'#e2e8f0', marginTop:0 }}>✏️ Edit Nurse</h3>
-            <div className="form-grid" style={{ padding:0 }}>
-              <div className="form-group"><label>Name</label><input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></div>
-              <div className="form-group"><label>Department</label><select value={editForm.department} onChange={e => setEditForm({ ...editForm, department: e.target.value })}>{DEPARTMENTS.map(d => <option key={d}>{d}</option>)}</select></div>
-              <div className="form-group"><label>Hospital</label><select value={editForm.hospital_id} onChange={e => setEditForm({ ...editForm, hospital_id: e.target.value })}><option value="">— None —</option>{hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}</select></div>
-              <div className="form-group"><label>Phone</label><input value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} /></div>
-              <div className="form-group"><label>Email</label><input value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
+          <div className="card" style={{ width: 500, maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            <div className="card-header">
+              <h2>✏️ Update Staff Profile</h2>
+              <button onClick={() => setEditing(null)} style={{ background:'none', border:'none', color:'#94a3b8', fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
-            <div style={{ display:'flex', gap:10, marginTop:12 }}>
-              <button className="btn btn-success" onClick={saveEdit}>Save Changes</button>
-              <button className="btn" style={{ background:'#334155', color:'#e2e8f0' }} onClick={() => setEditing(null)}>Cancel</button>
+            <div className="form-grid" style={{ padding: 24, gap: 16 }}>
+              <div className="form-group"><label>Full Legal Name</label><input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></div>
+              <div className="form-group">
+                <label>Assigned Unit</label>
+                <select value={editForm.department} onChange={e => setEditForm({ ...editForm, department: e.target.value })}>
+                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Facility Affiliation</label>
+                <select value={editForm.hospital_id} onChange={e => setEditForm({ ...editForm, hospital_id: e.target.value })}>
+                  <option value="">— Select Site —</option>
+                  {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group"><label>Primary Phone</label><input value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} /></div>
+              <div className="form-group"><label>Work Email</label><input value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
+            </div>
+            <div style={{ padding: '0 24px 24px', display: 'flex', gap: 12 }}>
+              <button className="btn btn-primary" onClick={saveEdit}>Save Profile</button>
+              <button className="btn" style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8' }} onClick={() => setEditing(null)}>Cancel</button>
             </div>
           </div>
         </div>
