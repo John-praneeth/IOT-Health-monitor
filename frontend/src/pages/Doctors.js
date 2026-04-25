@@ -131,7 +131,7 @@ export default function Doctors() {
     <div style={{ animation: 'reveal 0.4s ease-out' }}>
       <div className="main-topbar">
         <div>
-          <div className="main-title">Physician Registry</div>
+          <div className="main-title">Staff Registry - Physicians</div>
           <div className="main-subtitle">Staff management and clinical specializations</div>
         </div>
         <div className="topbar-actions">

@@ -210,10 +210,44 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
 .badge-red { background: rgba(244,63,94,0.1); color: var(--danger); }
 .badge-green { background: rgba(52,211,153,0.1); color: var(--success); }
-.badge-amber { background: rgba(251,191,36,0.1); color: var(--warning); }
-.badge-blue { background: rgba(34,211,238,0.1); color: var(--primary); }
+.user-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  background: rgba(168, 85, 247, 0.1);
+  color: #d8b4fe;
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  letter-spacing: 0.05em;
+}
 
-.btn { padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; border: none; transition: all 0.2s ease; }
+.logout-btn {
+  background: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  border-radius: 8px;
+  padding: 6px;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+  background: var(--danger);
+  transform: scale(1.1);
+  box-shadow: 0 0 12px var(--danger);
+}
+
+.sidebar-user-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
 .btn-primary { background: var(--primary); color: #000; }
 .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
 .btn-sm { padding: 6px 12px; font-size: 12px; }

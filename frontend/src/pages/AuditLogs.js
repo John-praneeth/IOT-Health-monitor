@@ -24,27 +24,29 @@ export default function AuditLogs() {
   const entities = [...new Set(logs.map(l => l.entity))];
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>📋 Audit Logs</h1>
-        <p>System activity log — admin only</p>
+    <div style={{ animation: 'reveal 0.4s ease-out' }}>
+      <div className="main-topbar">
+        <div>
+          <div className="main-title">Security Audit Logs</div>
+          <div className="main-subtitle">Immutable system activity log and administrative trace history</div>
+        </div>
+        <div className="topbar-actions">
+           <span className="live-tag" style={{ marginRight: 12 }}>{logs.length} RECORDS</span>
+           <button className="btn btn-primary btn-sm" onClick={load}>⟳ Sync Logs</button>
+        </div>
       </div>
-
-
 
       {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
 
-      <div className="filter-row">
+      <div className="filter-row" style={{ marginBottom: 24 }}>
         <select
-          style={{ background:'#1e293b', border:'1px solid #334155', color:'#e2e8f0',
-                   borderRadius:8, padding:'8px 12px', fontSize:13 }}
+          style={{ background:'rgba(0,0,0,0.2)', border:'1px solid rgba(255,255,255,0.1)', color:'#e2e8f0',
+                   borderRadius:8, padding:'8px 12px', fontSize:13, outline: 'none' }}
           value={entityFilter}
           onChange={e => setEntityFilter(e.target.value)}>
-          <option value="">All Entities</option>
+          <option value="">All Clinical Entities</option>
           {entities.map(e => <option key={e} value={e}>{e}</option>)}
         </select>
-        <button className="btn btn-primary btn-sm" onClick={load}>⟳ Refresh</button>
-        <span style={{ color:'#64748b', fontSize:12 }}>{logs.length} records</span>
       </div>
 
       <div className="card">

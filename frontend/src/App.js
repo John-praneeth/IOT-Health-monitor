@@ -111,31 +111,25 @@ export default function App() {
             )}
           </nav>
 
-          <div className="sidebar-insight">
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-               <div className="live-dot" />
-               <span style={{ fontWeight:700 }}>Telemetry Online</span>
-            </div>
-          </div>
-
           <div className="sidebar-user">
-            <span className="sidebar-user-name">👤 {user.username}</span>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+               <div>
+                  <div className="sidebar-user-name">👤 {user.username}</div>
+                  <div className="user-pill" style={{ marginTop:4, fontSize:9, padding:'2px 8px' }}>{user.role}</div>
+               </div>
+               <button className="logout-btn" onClick={handleLogout} style={{ fontSize:16 }} title="Logout">🚪</button>
+            </div>
+            <div className="sidebar-insight">
+               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <div className="live-dot" />
+                  <span style={{ fontWeight:700, fontSize:11 }}>TELEMETRY ACTIVE</span>
+               </div>
+            </div>
           </div>
           <div className="sidebar-footer">v5.2.0-PRO</div>
         </aside>
 
         <main className="main-content">
-          <div className="main-topbar">
-            <div>
-              <div className="main-title">Medical Command Center</div>
-              <div className="main-subtitle">Unified monitoring, assignment, and escalations</div>
-            </div>
-            <div className="topbar-actions">
-              <div className="user-pill">{user.role}</div>
-              <button className="logout-btn" onClick={handleLogout}>Logout</button>
-            </div>
-          </div>
-
           <div className="content-canvas">
           <Routes>
             <Route path="/"           element={<Dashboard />} />

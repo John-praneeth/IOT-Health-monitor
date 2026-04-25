@@ -147,7 +147,7 @@ export default function Patients() {
     <div style={{ animation: 'reveal 0.4s ease-out' }}>
       <div className="main-topbar">
         <div>
-          <div className="main-title">Patient Management</div>
+          <div className="main-title">Patient Directory</div>
           <div className="main-subtitle">Directory of clinical admissions and assignments</div>
         </div>
         <div className="topbar-actions">

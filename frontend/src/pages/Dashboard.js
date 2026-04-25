@@ -123,7 +123,7 @@ export default function Dashboard() {
     <div style={{ animation: 'reveal 0.5s ease-out' }}>
       <div className="main-topbar">
         <div>
-          <div className="main-title">Medical Command Center</div>
+          <div className="main-title">Clinical Dashboard</div>
           <div className="main-subtitle">
             <span className="live-tag">
               <span className="live-dot" />

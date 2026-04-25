@@ -146,10 +146,12 @@ export default function WhatsAppConfig() {
 
   if (role !== 'ADMIN') {
     return (
-      <div>
-        <div className="page-header">
-          <h1>WhatsApp Notifications</h1>
-          <p style={{ color: '#ef4444' }}>⛔ Only admins can access this page.</p>
+      <div style={{ animation: 'reveal 0.4s ease-out' }}>
+        <div className="main-topbar">
+          <div>
+            <div className="main-title">Communication Settings</div>
+            <div className="main-subtitle" style={{ color: '#ef4444' }}>⛔ Administrative Access Required</div>
+          </div>
         </div>
       </div>
     );
@@ -158,13 +160,16 @@ export default function WhatsAppConfig() {
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Loading…</div>;
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>📱 WhatsApp Notifications</h1>
-        <p>Manage WhatsApp alert notifications for doctors and nurses</p>
+    <div style={{ animation: 'reveal 0.4s ease-out' }}>
+      <div className="main-topbar">
+        <div>
+          <div className="main-title">Communication Settings</div>
+          <div className="main-subtitle">Manage automated WhatsApp clinical alerts and recipient registry</div>
+        </div>
+        <div className="topbar-actions">
+           <button className="btn btn-primary btn-sm" onClick={load}>⟳ Refresh Config</button>
+        </div>
       </div>
-
-
 
       {error && (
         <div style={{

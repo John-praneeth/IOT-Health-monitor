@@ -98,20 +98,25 @@ export default function Hospitals() {
   };
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>🏢 Hospitals</h1>
-        <p>Manage hospitals in the system</p>
+    <div style={{ animation: 'reveal 0.4s ease-out' }}>
+      <div className="main-topbar">
+        <div>
+          <div className="main-title">Medical Center Directory</div>
+          <div className="main-subtitle">Management of affiliated healthcare facilities and sites</div>
+        </div>
+        <div className="topbar-actions">
+           {canManage && (
+             <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(!showAdd)}>
+               {showAdd ? '✕ Close Portal' : '+ Register Hospital'}
+             </button>
+           )}
+        </div>
       </div>
 
-
-
-      {error && <div style={{ color:'#f87171', marginBottom:16 }}>⚠️ {error}</div>}
-
-      {canManage && (
-        <button className="btn btn-primary" style={{ marginBottom:16 }} onClick={() => setShowAdd(!showAdd)}>
-          {showAdd ? '✕ Cancel' : '+ Add Hospital'}
-        </button>
+      {error && (
+        <div className="card" style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.2)', padding: 12, marginBottom: 20, borderRadius: 12, color: '#fda4af', fontSize: 13 }}>
+          ⚠️ {error}
+        </div>
       )}
 
       {canManage && showAdd && (

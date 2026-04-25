@@ -223,30 +223,18 @@ export default function SystemStatus() {
   };
 
   return (
-    <div>
-      {/* Header */}
-      <div className="page-header">
-        <h1>🖥️ System Status</h1>
-        <p>Live overview of services, database health, and alert activity</p>
-      </div>
-
-
-
-      {/* Toolbar */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        {lastCheck && <span style={{ color: '#64748b', fontSize: 12 }}>Last updated: {lastCheck}</span>}
-        <button
-          onClick={fetchAll}
-          disabled={loading}
-          style={{
-            padding: '7px 18px', borderRadius: 7, border: '1px solid #475569',
-            background: '#1e293b', color: '#60a5fa', fontSize: 13,
-            cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 600,
-            opacity: loading ? 0.6 : 1,
-          }}
-        >
-          {loading ? '⏳ Checking…' : '🔄 Refresh'}
-        </button>
+    <div style={{ animation: 'reveal 0.4s ease-out' }}>
+      <div className="main-topbar">
+        <div>
+          <div className="main-title">System Health Monitor</div>
+          <div className="main-subtitle">Infrastructure telemetry and administrative service controls</div>
+        </div>
+        <div className="topbar-actions">
+           {lastCheck && <span className="live-tag" style={{ marginRight: 12 }}>Last Check: {lastCheck}</span>}
+           <button className="btn btn-primary btn-sm" onClick={fetchAll} disabled={loading}>
+             {loading ? '⏳ Syncing...' : '⟳ Refresh Status'}
+           </button>
+        </div>
       </div>
 
       {/* Overall Banner */}

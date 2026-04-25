@@ -124,7 +124,7 @@ export default function Nurses() {
     <div style={{ animation: 'reveal 0.4s ease-out' }}>
       <div className="main-topbar">
         <div>
-          <div className="main-title">Nursing Staff Registry</div>
+          <div className="main-title">Staff Registry - Nursing</div>
           <div className="main-subtitle">Care unit assignments and shift management</div>
         </div>
         <div className="topbar-actions">
