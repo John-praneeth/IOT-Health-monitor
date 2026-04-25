@@ -176,70 +176,81 @@ export default function Login({ onLogin }) {
   };
 
   return (
-    <div style={{
+    <div className="login-container" style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      minHeight: '100vh',
-      background: 'radial-gradient(circle at 15% 10%, rgba(45,212,191,.22), transparent 30%), radial-gradient(circle at 85% 15%, rgba(56,189,248,.22), transparent 28%), linear-gradient(145deg, #08131e 0%, #0f2436 55%, #173b4f 100%)',
-      padding: '20px',
+      minHeight: '100vh', width: '100vw',
+      position: 'relative', overflow: 'hidden', padding: '20px',
     }}>
+      {/* Background orbs reused from App.css via class but let's ensure they show if App.css is loaded */}
+      <div className="bg-orb orb-a" />
+      <div className="bg-orb orb-b" />
+      <div className="bg-orb orb-c" />
+
       <div style={{
-        background: 'linear-gradient(155deg, rgba(8,30,45,.92), rgba(11,24,39,.95))',
-        borderRadius: 20, padding: '30px 32px', width: 460,
-        boxShadow: '0 25px 50px rgba(0,0,0,.35)', border: '1px solid rgba(148,193,224,.3)',
+        background: 'rgba(15, 23, 42, 0.75)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        borderRadius: 32, padding: '40px', width: '100%', maxWidth: 480,
+        boxShadow: '0 25px 80px rgba(0,0,0,0.5)', 
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        position: 'relative', zIndex: 10,
+        animation: 'reveal 0.6s ease-out',
       }}>
         {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <div style={{ fontSize: 48, marginBottom: 6 }}>🏥</div>
-          <h1 style={{ color: '#ddf5ff', fontSize: 25, margin: 0, fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>PatientWatch</h1>
-          <p style={{ color: '#94b6cb', fontSize: 12, marginTop: 4 }}>IoT Healthcare Monitoring</p>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{ fontSize: 64, marginBottom: 12, filter: 'drop-shadow(0 0 20px rgba(34, 211, 238, 0.4))' }}>🏥</div>
+          <h1 style={{ color: '#fff', fontSize: 32, margin: 0, fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', letterSpacing: '-0.03em' }}>PatientWatch</h1>
+          <p style={{ color: '#94a3b8', fontSize: 13, marginTop: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Medical Command Center</p>
         </div>
 
+        {/* Dynamic Badges */}
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 18,
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24,
         }}>
-          <div style={{ background: 'rgba(45,212,191,.14)', border: '1px solid rgba(45,212,191,.35)', borderRadius: 10, padding: '8px 6px', textAlign: 'center', color: '#99f6e4', fontSize: 11, fontWeight: 700 }}>LIVE VITALS</div>
-          <div style={{ background: 'rgba(56,189,248,.14)', border: '1px solid rgba(56,189,248,.35)', borderRadius: 10, padding: '8px 6px', textAlign: 'center', color: '#bae6fd', fontSize: 11, fontWeight: 700 }}>ALERT READY</div>
-          <div style={{ background: 'rgba(251,113,133,.14)', border: '1px solid rgba(251,113,133,.35)', borderRadius: 10, padding: '8px 6px', textAlign: 'center', color: '#fecdd3', fontSize: 11, fontWeight: 700 }}>SECURE AUTH</div>
+          <div style={{ background: 'rgba(34, 211, 238, 0.1)', border: '1px solid rgba(34, 211, 238, 0.2)', borderRadius: 12, padding: '10px 4px', textAlign: 'center', color: '#22d3ee', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Live Telemetry</div>
+          <div style={{ background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.2)', borderRadius: 12, padding: '10px 4px', textAlign: 'center', color: '#34d399', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Alert Ready</div>
+          <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.2)', borderRadius: 12, padding: '10px 4px', textAlign: 'center', color: '#f43f5e', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Secure Pro</div>
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', marginBottom: 20, borderBottom: '1px solid #334155' }}>
+        <div style={{ display: 'flex', marginBottom: 28, background: 'rgba(0,0,0,0.2)', borderRadius: 16, padding: 4 }}>
           {[
-            { key: 'login',  label: '🔑 Sign In' },
-            { key: 'doctor', label: '👨‍⚕️ Doctor' },
-            { key: 'nurse',  label: '👩‍⚕️ Nurse'  },
+            { key: 'login',  label: 'Sign In' },
+            { key: 'doctor', label: 'Doctor' },
+            { key: 'nurse',  label: 'Nurse'  },
           ].map(({ key, label }) => (
             <button key={key} onClick={() => switchTab(key)} style={{
               flex: 1, padding: '10px 0', border: 'none',
-              borderBottom: tab === key ? '2px solid #3b82f6' : '2px solid transparent',
-              background: 'transparent',
-              color: tab === key ? '#ddf5ff' : '#88a7bb',
-              fontSize: 13, fontWeight: tab === key ? 600 : 400,
-              cursor: 'pointer', transition: 'all 0.2s',
+              background: tab === key ? 'rgba(255,255,255,0.08)' : 'transparent',
+              borderRadius: 12,
+              color: tab === key ? '#fff' : '#64748b',
+              fontSize: 13, fontWeight: 800,
+              cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             }}>{label}</button>
           ))}
         </div>
 
         {error && (
           <div style={{
-            background: 'rgba(153,27,27,.5)', color: '#fecaca', borderRadius: 10,
-            border: '1px solid rgba(251,113,133,.45)',
-            padding: '9px 12px', fontSize: 13, marginBottom: 14,
+            background: 'rgba(244, 63, 94, 0.15)', color: '#fda4af', borderRadius: 14,
+            border: '1px solid rgba(244, 63, 94, 0.3)',
+            padding: '12px 16px', fontSize: 13, marginBottom: 20, fontWeight: 600,
+            animation: 'shake 0.4s ease-in-out'
           }}>⚠️ {error}</div>
         )}
 
         {resetMsg && (
           <div style={{
-            background: 'rgba(6,78,59,.55)', color: '#a7f3d0', borderRadius: 10,
-            border: '1px solid rgba(52,211,153,.45)',
-            padding: '9px 12px', fontSize: 13, marginBottom: 14,
+            background: 'rgba(52, 211, 153, 0.15)', color: '#6ee7b7', borderRadius: 14,
+            border: '1px solid rgba(52, 211, 153, 0.3)',
+            padding: '12px 16px', fontSize: 13, marginBottom: 20, fontWeight: 600,
           }}>✅ {resetMsg}</div>
         )}
 
         {/* ── Sign In ── */}
         {tab === 'login' && (
           <form onSubmit={showReset ? (resetStep === 'request' ? handleResetRequest : handleResetConfirm) : handleLogin}>
-            <label style={labelStyle}>Username</label>
+            <label style={labelStyle}>Staff ID / Username</label>
             {showReset ? (
               <>
                 <input placeholder="Enter your username" value={resetForm.username}
@@ -248,16 +259,16 @@ export default function Login({ onLogin }) {
                 {resetStep === 'confirm' && (
                   <>
                     <label style={labelStyle}>Verification Code</label>
-                    <input placeholder="Enter verification code" value={resetForm.verification_code}
+                    <input placeholder="Enter 6-digit code" value={resetForm.verification_code}
                       onChange={e => setResetForm({ ...resetForm, verification_code: e.target.value })}
                       required style={inputStyle} />
                     <label style={labelStyle}>New Password</label>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                      <input type={showLoginPassword ? 'text' : 'password'} placeholder="Enter new password" value={resetForm.new_password}
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                      <input type={showLoginPassword ? 'text' : 'password'} placeholder="New password" value={resetForm.new_password}
                         onChange={e => setResetForm({ ...resetForm, new_password: e.target.value })}
                         required style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
-                      <button type="button" onClick={() => setShowLoginPassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 86, padding: '10px 8px' }}>
-                        {showLoginPassword ? 'Hide' : 'Show'}
+                      <button type="button" onClick={() => setShowLoginPassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 80, padding: 0, fontSize: 11, fontWeight: 800 }}>
+                        {showLoginPassword ? 'HIDE' : 'SHOW'}
                       </button>
                     </div>
                     <label style={labelStyle}>Confirm Password</label>
@@ -268,14 +279,9 @@ export default function Login({ onLogin }) {
                 )}
                 <button type="submit" disabled={loading} style={btnStyle}>
                   {loading
-                    ? (resetStep === 'request' ? 'Sending…' : 'Resetting…')
-                    : (resetStep === 'request' ? '📨 Send Verification Code' : '🔁 Reset Password')}
+                    ? (resetStep === 'request' ? 'AUTHORIZING…' : 'UPDATING…')
+                    : (resetStep === 'request' ? 'SEND RESET CODE' : 'CONFIRM NEW PASSWORD')}
                 </button>
-                {resetStep === 'confirm' && (
-                  <button type="button" onClick={() => setResetStep('request')} style={{ ...btnStyle, marginTop: 8, background: '#334155' }}>
-                    Resend Code
-                  </button>
-                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -285,27 +291,27 @@ export default function Login({ onLogin }) {
                     setResetMsg('');
                     setResetForm({ username: '', verification_code: '', new_password: '', confirm_password: '' });
                   }}
-                  style={{ ...btnStyle, marginTop: 8, background: '#334155' }}
+                  style={{ ...btnStyle, marginTop: 12, background: 'rgba(255,255,255,0.05)', color: '#94a3b8', boxShadow: 'none', border: '1px solid rgba(255,255,255,0.1)' }}
                 >
-                  Back to Sign In
+                  RETURN TO SIGN IN
                 </button>
               </>
             ) : (
               <>
-                <input placeholder="Enter your username" value={loginForm.username}
+                <input placeholder="Enter staff identifier" value={loginForm.username}
                   onChange={e => setLoginForm({ ...loginForm, username: e.target.value })}
                   required autoFocus style={inputStyle} />
-                <label style={labelStyle}>Password</label>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                  <input type={showLoginPassword ? 'text' : 'password'} placeholder="Enter your password" value={loginForm.password}
+                <label style={labelStyle}>Access Key / Password</label>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                  <input type={showLoginPassword ? 'text' : 'password'} placeholder="Enter credentials" value={loginForm.password}
                     onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
                     required style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
-                  <button type="button" onClick={() => setShowLoginPassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 86, padding: '10px 8px' }}>
-                    {showLoginPassword ? 'Hide' : 'Show'}
+                  <button type="button" onClick={() => setShowLoginPassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 80, padding: 0, fontSize: 11, fontWeight: 800 }}>
+                    {showLoginPassword ? 'HIDE' : 'SHOW'}
                   </button>
                 </div>
                 <button type="submit" disabled={loading} style={btnStyle}>
-                  {loading ? 'Signing in…' : '🔑 Sign In'}
+                  {loading ? 'AUTHENTICATING…' : 'INITIALIZE SESSION'}
                 </button>
                 <button
                   type="button"
@@ -316,9 +322,13 @@ export default function Login({ onLogin }) {
                     setResetMsg('');
                     setResetForm({ username: loginForm.username || '', verification_code: '', new_password: '', confirm_password: '' });
                   }}
-                  style={{ ...btnStyle, marginTop: 8, background: '#334155' }}
+                  style={{ 
+                    marginTop: 20, background: 'none', border: 'none', color: '#64748b', 
+                    fontSize: 12, fontWeight: 700, cursor: 'pointer', width: '100%',
+                    textDecoration: 'underline', textUnderlineOffset: '4px'
+                  }}
                 >
-                  Forgot password? Reset here
+                  Forgot credentials? Reset here
                 </button>
               </>
             )}
@@ -328,27 +338,24 @@ export default function Login({ onLogin }) {
         {/* ── Doctor Registration ── */}
         {tab === 'doctor' && (
           <form onSubmit={handleDoctorRegister}>
-            <p style={hintStyle}>Register as a doctor (freelancer or hospital-based)</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <p style={hintStyle}>Initialize new Doctor terminal (Freelance or Hospital)</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
               <div>
                 <label style={labelStyle}>Username</label>
-                <input placeholder="Username" value={doctorForm.username}
+                <input placeholder="ID" value={doctorForm.username}
                   onChange={e => setDoctorForm({ ...doctorForm, username: e.target.value })}
                   required style={{ ...inputStyle, marginBottom: 0 }} />
               </div>
               <div>
                 <label style={labelStyle}>Password</label>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input type={showDoctorPassword ? 'text' : 'password'} placeholder="Password" value={doctorForm.password}
+                  <input type={showDoctorPassword ? 'text' : 'password'} placeholder="Key" value={doctorForm.password}
                     onChange={e => setDoctorForm({ ...doctorForm, password: e.target.value })}
                     required style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
-                  <button type="button" onClick={() => setShowDoctorPassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 78, padding: '10px 8px' }}>
-                    {showDoctorPassword ? 'Hide' : 'Show'}
-                  </button>
                 </div>
               </div>
             </div>
-            <div style={{ height: 10 }} />
+            
             <label style={labelStyle}>Full Name</label>
             <input placeholder="e.g. Dr. Jane Smith" value={doctorForm.name}
               onChange={e => setDoctorForm({ ...doctorForm, name: e.target.value })}
@@ -357,37 +364,42 @@ export default function Login({ onLogin }) {
             <select value={doctorForm.specialization}
               onChange={e => setDoctorForm({ ...doctorForm, specialization: e.target.value })}
               style={inputStyle}>
-              {SPECIALIZATIONS.map(s => <option key={s}>{s}</option>)}
+              {SPECIALIZATIONS.map(s => <option key={s} style={{background: '#020617'}}>{s}</option>)}
             </select>
-            <label style={labelStyle}>Hospital <span style={{ color: '#475569' }}>(optional)</span></label>
-            <select value={doctorForm.hospital_id}
-              onChange={e => setDoctorForm({ ...doctorForm, hospital_id: e.target.value })}
-              style={inputStyle}>
-              <option value="">— No Hospital (Freelancer) —</option>
-              {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}
-            </select>
-            <label style={labelStyle}>Phone <span style={{ color: '#475569' }}>(optional)</span></label>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-              <select value={doctorCountryCode} onChange={e => setDoctorCountryCode(e.target.value)}
-                style={{ ...inputStyle, width: 90, flex: '0 0 90px', marginBottom: 0 }}>
-                {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
-              </select>
-              <input placeholder="Phone number" value={doctorForm.phone}
-                onChange={e => setDoctorForm({ ...doctorForm, phone: e.target.value.replace(/\D/g, '') })}
-                style={{ ...inputStyle, flex: 1, minWidth: 0, marginBottom: 0 }} />
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+               <div>
+                  <label style={labelStyle}>Hospital</label>
+                  <select value={doctorForm.hospital_id}
+                    onChange={e => setDoctorForm({ ...doctorForm, hospital_id: e.target.value })}
+                    style={inputStyle}>
+                    <option value="" style={{background: '#020617'}}>— Freelance —</option>
+                    {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id} style={{background: '#020617'}}>{h.name}</option>)}
+                  </select>
+               </div>
+               <div>
+                  <label style={labelStyle}>Region Code</label>
+                  <select value={doctorCountryCode} onChange={e => setDoctorCountryCode(e.target.value)}
+                    style={inputStyle}>
+                    {COUNTRY_CODES.map(c => <option key={c.code} value={c.code} style={{background: '#020617'}}>{c.label}</option>)}
+                  </select>
+               </div>
             </div>
-            <label style={labelStyle}>Email <span style={{ color: '#475569' }}>(optional)</span></label>
-            <input placeholder="email@example.com" type="email" value={doctorForm.email}
-              onChange={e => setDoctorForm({ ...doctorForm, email: e.target.value })}
+
+            <label style={labelStyle}>Emergency Contact (Phone)</label>
+            <input placeholder="Phone number" value={doctorForm.phone}
+              onChange={e => setDoctorForm({ ...doctorForm, phone: e.target.value.replace(/\D/g, '') })}
               style={inputStyle} />
-            <div style={{ height: 10 }} />
-            <label style={{ color: '#94a3b8', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, cursor: 'pointer' }}>
+
+            <div style={{ height: 8 }} />
+            <label style={{ color: '#94a3b8', fontSize: 12, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, cursor: 'pointer', fontWeight: 700 }}>
               <input type="checkbox" checked={doctorForm.is_freelancer}
-                onChange={e => setDoctorForm({ ...doctorForm, is_freelancer: e.target.checked })} />
-              Freelancer Doctor
+                onChange={e => setDoctorForm({ ...doctorForm, is_freelancer: e.target.checked })} 
+                style={{ width: 16, height: 16, accentColor: '#22d3ee' }} />
+              ENABLE FREELANCE OVERRIDE
             </label>
             <button type="submit" disabled={loading} style={btnStyle}>
-              {loading ? 'Registering…' : '👨‍⚕️ Register as Doctor'}
+              {loading ? 'REGISTERING…' : 'AUTHORIZE DOCTOR TERMINAL'}
             </button>
           </form>
         )}
@@ -395,61 +407,61 @@ export default function Login({ onLogin }) {
         {/* ── Nurse Registration ── */}
         {tab === 'nurse' && (
           <form onSubmit={handleNurseRegister}>
-            <p style={hintStyle}>Register as a nurse at a hospital</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <p style={hintStyle}>Initialize new Nurse terminal for local care ward</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
               <div>
                 <label style={labelStyle}>Username</label>
-                <input placeholder="Username" value={nurseForm.username}
+                <input placeholder="ID" value={nurseForm.username}
                   onChange={e => setNurseForm({ ...nurseForm, username: e.target.value })}
                   required style={{ ...inputStyle, marginBottom: 0 }} />
               </div>
               <div>
                 <label style={labelStyle}>Password</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input type={showNursePassword ? 'text' : 'password'} placeholder="Password" value={nurseForm.password}
-                    onChange={e => setNurseForm({ ...nurseForm, password: e.target.value })}
-                    required style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
-                  <button type="button" onClick={() => setShowNursePassword(v => !v)} style={{ ...inputStyle, marginBottom: 0, width: 78, padding: '10px 8px' }}>
-                    {showNursePassword ? 'Hide' : 'Show'}
-                  </button>
-                </div>
+                <input type={showNursePassword ? 'text' : 'password'} placeholder="Key" value={nurseForm.password}
+                  onChange={e => setNurseForm({ ...nurseForm, password: e.target.value })}
+                  required style={{ ...inputStyle, marginBottom: 0 }} />
               </div>
             </div>
-            <div style={{ height: 10 }} />
+            
             <label style={labelStyle}>Full Name</label>
             <input placeholder="e.g. Nurse Sarah Connor" value={nurseForm.name}
               onChange={e => setNurseForm({ ...nurseForm, name: e.target.value })}
               required style={inputStyle} />
-            <label style={labelStyle}>Department</label>
-            <select value={nurseForm.department}
-              onChange={e => setNurseForm({ ...nurseForm, department: e.target.value })}
-              style={inputStyle}>
-              {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-            </select>
-            <label style={labelStyle}>Hospital <span style={{ color: '#475569' }}>(optional)</span></label>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+               <div>
+                  <label style={labelStyle}>Ward / Dept</label>
+                  <select value={nurseForm.department}
+                    onChange={e => setNurseForm({ ...nurseForm, department: e.target.value })}
+                    style={inputStyle}>
+                    {DEPARTMENTS.map(d => <option key={d} style={{background: '#020617'}}>{d}</option>)}
+                  </select>
+               </div>
+               <div>
+                  <label style={labelStyle}>Region Code</label>
+                  <select value={nurseCountryCode} onChange={e => setNurseCountryCode(e.target.value)}
+                    style={inputStyle}>
+                    {COUNTRY_CODES.map(c => <option key={c.code} value={c.code} style={{background: '#020617'}}>{c.label}</option>)}
+                  </select>
+               </div>
+            </div>
+
+            <label style={labelStyle}>Assigned Hospital</label>
             <select value={nurseForm.hospital_id}
               onChange={e => setNurseForm({ ...nurseForm, hospital_id: e.target.value })}
               style={inputStyle}>
-              <option value="">— Select Hospital —</option>
-              {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id}>{h.name}</option>)}
+              <option value="" style={{background: '#020617'}}>— Select Hospital —</option>
+              {hospitals.map(h => <option key={h.hospital_id} value={h.hospital_id} style={{background: '#020617'}}>{h.name}</option>)}
             </select>
-            <label style={labelStyle}>Phone <span style={{ color: '#475569' }}>(optional)</span></label>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-              <select value={nurseCountryCode} onChange={e => setNurseCountryCode(e.target.value)}
-                style={{ ...inputStyle, width: 90, flex: '0 0 90px', marginBottom: 0 }}>
-                {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
-              </select>
-              <input placeholder="Phone number" value={nurseForm.phone}
-                onChange={e => setNurseForm({ ...nurseForm, phone: e.target.value.replace(/\D/g, '') })}
-                style={{ ...inputStyle, flex: 1, minWidth: 0, marginBottom: 0 }} />
-            </div>
-            <label style={labelStyle}>Email <span style={{ color: '#475569' }}>(optional)</span></label>
-            <input placeholder="email@example.com" type="email" value={nurseForm.email}
-              onChange={e => setNurseForm({ ...nurseForm, email: e.target.value })}
+
+            <label style={labelStyle}>Emergency Contact (Phone)</label>
+            <input placeholder="Phone number" value={nurseForm.phone}
+              onChange={e => setNurseForm({ ...nurseForm, phone: e.target.value.replace(/\D/g, '') })}
               style={inputStyle} />
-            <div style={{ height: 14 }} />
+
+            <div style={{ height: 12 }} />
             <button type="submit" disabled={loading} style={btnStyle}>
-              {loading ? 'Registering…' : '👩‍⚕️ Register as Nurse'}
+              {loading ? 'REGISTERING…' : 'AUTHORIZE NURSE TERMINAL'}
             </button>
           </form>
         )}
@@ -459,22 +471,26 @@ export default function Login({ onLogin }) {
 }
 
 const labelStyle = {
-  display: 'block', color: '#a1c0d5', fontSize: 11,
-  fontWeight: 600, marginBottom: 5, letterSpacing: '0.05em', textTransform: 'uppercase',
+  display: 'block', color: '#94a3b8', fontSize: 10,
+  fontWeight: 800, marginBottom: 6, letterSpacing: '0.1em', textTransform: 'uppercase',
 };
 
 const hintStyle = {
-  color: '#8caabc', fontSize: 12, marginBottom: 14, marginTop: 0,
+  color: '#64748b', fontSize: 11, marginBottom: 20, marginTop: 0, fontWeight: 600,
 };
 
 const inputStyle = {
-  width: '100%', padding: '10px 12px', borderRadius: 8,
-  border: '1px solid rgba(148,193,224,.32)', background: 'rgba(4,24,36,.75)', color: '#e2f2fd',
-  fontSize: 13, marginBottom: 10, boxSizing: 'border-box', outline: 'none',
+  width: '100%', padding: '14px 16px', borderRadius: 14,
+  border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: '#fff',
+  fontSize: 14, marginBottom: 16, boxSizing: 'border-box', outline: 'none',
+  transition: 'all 0.3s ease',
 };
 
 const btnStyle = {
-  width: '100%', padding: '12px 0', borderRadius: 8, border: 'none',
-  background: 'linear-gradient(120deg,#2dd4bf,#0ea5a6)', color: '#042226', fontWeight: 800, fontSize: 14,
-  cursor: 'pointer', marginTop: 2, letterSpacing: '0.02em',
+  width: '100%', padding: '14px 0', borderRadius: 14, border: 'none',
+  background: '#22d3ee', color: '#020617', fontWeight: 800, fontSize: 14,
+  cursor: 'pointer', marginTop: 4, letterSpacing: '0.05em', textTransform: 'uppercase',
+  boxShadow: '0 4px 20px rgba(34, 211, 238, 0.3)',
+  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
 };
+

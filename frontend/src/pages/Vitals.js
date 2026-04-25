@@ -142,23 +142,26 @@ export default function Vitals() {
       {
         label: 'Heart Rate (bpm)',
         data: chartVitals.map(v => v.heart_rate),
-        borderColor: '#f87171',
-        backgroundColor: 'rgba(248,113,113,0.1)',
-        tension: 0.3, fill: true,
+        borderColor: '#f43f5e',
+        backgroundColor: 'rgba(244,63,94,0.1)',
+        tension: 0.4, fill: true,
+        pointRadius: 2,
       },
       {
         label: 'SpO₂ (%)',
         data: chartVitals.map(v => v.spo2),
         borderColor: '#34d399',
         backgroundColor: 'rgba(52,211,153,0.1)',
-        tension: 0.3, fill: true,
+        tension: 0.4, fill: true,
+        pointRadius: 2,
       },
       {
         label: 'Temperature (°F)',
         data: chartVitals.map(v => v.temperature),
         borderColor: '#fbbf24',
         backgroundColor: 'rgba(251,191,36,0.1)',
-        tension: 0.3, fill: true,
+        tension: 0.4, fill: true,
+        pointRadius: 2,
       },
     ],
   };
@@ -168,16 +171,17 @@ export default function Vitals() {
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { labels: { color: '#e2e8f0' } },
+      legend: { labels: { color: '#94a3b8', font: { weight: '600' } } },
       title: {
         display: true,
-        text: filter ? `Trend: ${patientName(parseInt(filter))}` : 'Vitals Trend (All Patients)',
-        color: '#e2e8f0',
+        text: filter ? `Telemetry Feed: ${patientName(parseInt(filter))}` : 'Global Vitals Telemetry',
+        color: '#f1f5f9',
+        font: { size: 16, weight: '700', family: "'Space Grotesk', sans-serif" }
       },
     },
     scales: {
-      x: { ticks: { color: '#64748b', maxTicksLimit: 15 }, grid: { color: '#1e293b' } },
-      y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+      x: { ticks: { color: '#64748b', maxTicksLimit: 15 }, grid: { color: 'rgba(255,255,255,0.03)' } },
+      y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.03)' } },
     },
   };
 

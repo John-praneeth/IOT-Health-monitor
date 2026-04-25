@@ -72,18 +72,19 @@ export default function App() {
   return (
     <Router>
       <div className="app-layout">
-        {serverOffline && (
-          <div className="server-offline-banner">
-            ⚠️ Connection Lost: The server is currently offline. Some features may be limited. 
-            <button onClick={() => setServerOffline(false)}>Dismiss</button>
-          </div>
-        )}
         <div className="bg-orb orb-a" />
         <div className="bg-orb orb-b" />
         <div className="bg-orb orb-c" />
 
+        {serverOffline && (
+          <div className="server-offline-banner">
+            ⚠️ Connection Lost: The server is currently offline. Some features may be limited. 
+            <button onClick={() => setServerOffline(false)} style={{ marginLeft: 12, background:'rgba(255,255,255,0.1)', border:'1px solid #fff', color:'#fff', padding:'2px 8px', borderRadius:4, cursor:'pointer' }}>Dismiss</button>
+          </div>
+        )}
+
         <button className="mobile-nav-toggle" onClick={() => setSidebarOpen(v => !v)}>
-          {sidebarOpen ? '✕ Close' : '☰ Menu'}
+          {sidebarOpen ? '✕' : '☰'}
         </button>
 
         <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
@@ -91,39 +92,42 @@ export default function App() {
             <span className="logo-icon">🏥</span>
             <span className="logo-text">PatientWatch</span>
           </div>
-          <div className="sidebar-subtitle">Intelligent Care Operations</div>
+          <div className="sidebar-subtitle">Intelligent Care Ops</div>
+          
           <nav className="sidebar-nav">
             <NavLink to="/" end className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>📊 Dashboard</NavLink>
             <NavLink to="/patients" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🛏️ Patients</NavLink>
             <NavLink to="/doctors" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>👨‍⚕️ Doctors</NavLink>
             <NavLink to="/nurses" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>👩‍⚕️ Nurses</NavLink>
-            <NavLink to="/vitals" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>💓 Vitals</NavLink>
-            <NavLink to="/alerts" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🚨 Alerts</NavLink>
+            <NavLink to="/vitals" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>💓 Vitals Feed</NavLink>
+            <NavLink to="/alerts" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🚨 Active Alerts</NavLink>
             {user.role === 'ADMIN' && (
               <>
                 <NavLink to="/hospitals" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🏢 Hospitals</NavLink>
                 <NavLink to="/whatsapp" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>📱 WhatsApp</NavLink>
-                <NavLink to="/status" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🖥️ System Status</NavLink>
+                <NavLink to="/status" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🖥️ System</NavLink>
                 <NavLink to="/audit-logs" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>📋 Audit Logs</NavLink>
               </>
             )}
           </nav>
 
           <div className="sidebar-insight">
-            <span className="dot dot-green" />
-            <span>Live operations online</span>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+               <div className="live-dot" />
+               <span style={{ fontWeight:700 }}>Telemetry Online</span>
+            </div>
           </div>
 
           <div className="sidebar-user">
-            <span className="sidebar-user-name">👤 {user.username} ({user.role})</span>
+            <span className="sidebar-user-name">👤 {user.username}</span>
           </div>
-          <div className="sidebar-footer">API: {API_BASE_LABEL}</div>
+          <div className="sidebar-footer">v5.2.0-PRO</div>
         </aside>
 
         <main className="main-content">
           <div className="main-topbar">
             <div>
-              <div className="main-title">Care Command Center</div>
+              <div className="main-title">Medical Command Center</div>
               <div className="main-subtitle">Unified monitoring, assignment, and escalations</div>
             </div>
             <div className="topbar-actions">

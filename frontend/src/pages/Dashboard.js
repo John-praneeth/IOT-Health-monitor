@@ -153,10 +153,10 @@ export default function Dashboard() {
 
   const totalForBars = Math.max(1, patients.length);
   const barSeries = [
-    { key: 'critical', label: 'Critical', value: statusCounts.critical, color: '#fb7185' },
-    { key: 'warning', label: 'Warning', value: statusCounts.warning, color: '#f59e0b' },
-    { key: 'normal', label: 'Stable', value: statusCounts.normal, color: '#22c55e' },
-    { key: 'no-data', label: 'No Data', value: statusCounts['no-data'], color: '#60a5fa' },
+    { key: 'critical', label: 'Critical', value: statusCounts.critical, color: '#f43f5e' },
+    { key: 'warning', label: 'Warning', value: statusCounts.warning, color: '#fbbf24' },
+    { key: 'normal', label: 'Stable', value: statusCounts.normal, color: '#34d399' },
+    { key: 'no-data', label: 'No Data', value: statusCounts['no-data'], color: '#22d3ee' },
   ];
 
   const totalAlerts = Math.max(1, alerts.length);
@@ -165,7 +165,7 @@ export default function Dashboard() {
   const escalatedPct = Math.round((escalatedAlerts.length / totalAlerts) * 100);
   const ackPct = Math.max(0, 100 - pendingPct - escalatedPct);
   const ringBg = {
-    background: `conic-gradient(#fb7185 0 ${escalatedPct}%, #f59e0b ${escalatedPct}% ${escalatedPct + pendingPct}%, #22c55e ${escalatedPct + pendingPct}% 100%)`,
+    background: `conic-gradient(#f43f5e 0 ${escalatedPct}%, #fbbf24 ${escalatedPct}% ${escalatedPct + pendingPct}%, #34d399 ${escalatedPct + pendingPct}% 100%)`,
   };
 
   return (
