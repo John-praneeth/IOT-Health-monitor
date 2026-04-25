@@ -108,17 +108,30 @@ HTTP_REQUESTS_TOTAL = 0
 HTTP_REQUEST_ERRORS_TOTAL = 0
 HTTP_REQUEST_DURATION_SECONDS_SUM = 0.0
 _redis_subscriber_started = False
+import threading
+import scheduler
+
 _redis_subscriber_task: Optional[asyncio.Task] = None
 
 
 @asynccontextmanager
 async def app_lifespan(_app: FastAPI):
-    """Manage background subscriber lifecycle without deprecated startup hooks."""
+    """Manage background subscriber lifecycle and polling scheduler."""
     global _redis_subscriber_started, _redis_subscriber_task
     if not _redis_subscriber_started and is_redis_available():
         _redis_subscriber_task = asyncio.create_task(_redis_vitals_subscriber())
         _redis_subscriber_started = True
         logger.info("Redis pub/sub WebSocket subscriber started (v5.2 event-driven)")
+        
+    # Start the polling scheduler automatically in the background
+    import sys
+    if "pytest" not in sys.modules:
+        scheduler_thread = threading.Thread(target=scheduler.run, daemon=True)
+        scheduler_thread.start()
+        logger.info("Background polling scheduler automatically started inside the main process.")
+    else:
+        logger.info("Skipping background scheduler start during tests.")
+    
     try:
         yield
     finally:

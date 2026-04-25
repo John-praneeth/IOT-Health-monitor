@@ -229,7 +229,7 @@ export default function Vitals() {
             </thead>
             <tbody>
               {vitals.length === 0 && (
-                <tr><td colSpan={6} className="empty-state">No vitals recorded yet. Ensure the IoT hardware is connected and the background polling scheduler is running.</td></tr>
+                <tr><td colSpan={6} className="empty-state">No vitals recorded yet. Waiting for initial sensor data to arrive.</td></tr>
               )}
               {vitals.map(v => (
                 <tr key={v.vital_id} className={rowClass(v)}>
