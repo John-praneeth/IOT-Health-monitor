@@ -107,9 +107,9 @@ class ThingSpeakSource(VitalSource):
             resp = httpx.get(url, params=params, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
-                if data:
+                if isinstance(data, dict) and data:
                     return data
-                logger.warning("Empty response from ThingSpeak")
+                logger.warning("Empty or non-dictionary response from ThingSpeak")
             else:
                 logger.error("ThingSpeak HTTP %d: %s", resp.status_code, resp.text[:200])
         except httpx.TimeoutException:

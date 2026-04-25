@@ -614,7 +614,17 @@ def forgot_password_confirm(
         .order_by(models.PasswordResetToken.created_at.desc())
         .first()
     )
-    if not token_row or not auth.verify_password(body.verification_code, token_row.code_hash):
+    if not token_row:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+
+    if token_row.failed_attempts >= 5:
+        token_row.used = True
+        db.commit()
+        raise HTTPException(status_code=400, detail="Too many failed attempts. Please request a new code.")
+
+    if not auth.verify_password(body.verification_code, token_row.code_hash):
+        token_row.failed_attempts += 1
+        db.commit()
         raise HTTPException(status_code=400, detail="Invalid or expired verification code")
 
     token_row.used = True
@@ -1264,11 +1274,11 @@ def check_alert_ownership(db: Session, alert_id: int, current_user: models.User)
     """Only the assigned doctor can acknowledge alerts (admin only if explicitly enabled)."""
     alert = db.query(models.Alert).filter(models.Alert.alert_id == alert_id).first()
     if not alert:
-        return
+        raise HTTPException(status_code=404, detail="Alert not found")
 
     patient = db.query(models.Patient).filter(models.Patient.patient_id == alert.patient_id).first()
     if not patient:
-        return
+        raise HTTPException(status_code=404, detail="Patient associated with alert not found")
 
     if current_user.role == "DOCTOR":
         if not current_user.doctor_id or patient.assigned_doctor != current_user.doctor_id:
