@@ -73,29 +73,52 @@ export default function Dashboard() {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const ws = new WebSocket(buildVitalsWsUrl(token));
+    let ws = null;
+    let reconnectTimer = null;
+    let isMounted = true;
 
-    ws.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(event.data);
-        if (!Array.isArray(parsed)) return;
-        const next = {};
-        parsed.forEach((v) => {
-          if (v?.patient_id != null) {
-            next[v.patient_id] = v;
+    const connect = () => {
+      if (!isMounted) return;
+      ws = new WebSocket(buildVitalsWsUrl(token));
+
+      ws.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (!Array.isArray(parsed)) return;
+          const next = {};
+          parsed.forEach((v) => {
+            if (v?.patient_id != null) {
+              next[v.patient_id] = v;
+            }
+          });
+          if (Object.keys(next).length > 0) {
+            setLiveVitals(next);
+            setLastRefresh(new Date().toLocaleTimeString());
           }
-        });
-        if (Object.keys(next).length > 0) {
-          setLiveVitals(next);
-          setLastRefresh(new Date().toLocaleTimeString());
+        } catch {
+          // Ignore keepalive/invalid payloads.
         }
-      } catch {
-        // Ignore keepalive/invalid payloads.
-      }
+      };
+
+      ws.onclose = () => {
+        if (isMounted) {
+          reconnectTimer = setTimeout(connect, 3000);
+        }
+      };
+
+      ws.onerror = () => {
+        if (ws.readyState === 1) ws.close();
+      };
     };
 
+    connect();
+
     return () => {
-      try { ws.close(); } catch { /* no-op */ }
+      isMounted = false;
+      clearTimeout(reconnectTimer);
+      if (ws) {
+        try { ws.close(); } catch { /* no-op */ }
+      }
     };
   }, []);
 

@@ -54,50 +54,73 @@ export default function Vitals() {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const ws = new WebSocket(buildVitalsWsUrl(token));
+    let ws = null;
+    let reconnectTimer = null;
+    let isMounted = true;
 
-    ws.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(event.data);
-        if (!Array.isArray(parsed) || parsed.length === 0) return;
+    const connect = () => {
+      if (!isMounted) return;
+      ws = new WebSocket(buildVitalsWsUrl(token));
 
-        const incoming = parsed
-          .filter(v => v?.patient_id != null)
-          .filter(v => !filter || String(v.patient_id) === String(filter))
-          .filter(v => {
-            if (!doctorFilter) return true;
-            const patient = patients.find(p => p.patient_id === v.patient_id);
-            return patient && String(patient.assigned_doctor) === String(doctorFilter);
-          })
-          .map(v => ({
-            ...v,
-            vital_id: v.vital_id ?? `ws-${v.patient_id}-${v.timestamp}`,
-          }));
+      ws.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (!Array.isArray(parsed) || parsed.length === 0) return;
 
-        if (incoming.length === 0) return;
+          const incoming = parsed
+            .filter(v => v?.patient_id != null)
+            .filter(v => !filter || String(v.patient_id) === String(filter))
+            .filter(v => {
+              if (!doctorFilter) return true;
+              const patient = patients.find(p => p.patient_id === v.patient_id);
+              return patient && String(patient.assigned_doctor) === String(doctorFilter);
+            })
+            .map(v => ({
+              ...v,
+              vital_id: v.vital_id ?? `ws-${v.patient_id}-${v.timestamp}`,
+            }));
 
-        setVitals(prev => {
-          const merged = [...incoming, ...prev];
-          const seen = new Set();
-          const deduped = [];
-          for (const row of merged) {
-            const key = `${row.patient_id}-${row.timestamp}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              deduped.push(row);
+          if (incoming.length === 0) return;
+
+          setVitals(prev => {
+            const merged = [...incoming, ...prev];
+            const seen = new Set();
+            const deduped = [];
+            for (const row of merged) {
+              const key = `${row.patient_id}-${row.timestamp}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                deduped.push(row);
+              }
+              if (deduped.length >= 100) break;
             }
-            if (deduped.length >= 100) break;
-          }
-          return deduped;
-        });
-        setLastRefresh(new Date().toLocaleTimeString());
-      } catch {
-        // Ignore keepalive/invalid payloads.
-      }
+            return deduped;
+          });
+          setLastRefresh(new Date().toLocaleTimeString());
+        } catch {
+          // Ignore keepalive/invalid payloads.
+        }
+      };
+
+      ws.onclose = () => {
+        if (isMounted) {
+          reconnectTimer = setTimeout(connect, 3000);
+        }
+      };
+
+      ws.onerror = () => {
+        if (ws.readyState === 1) ws.close();
+      };
     };
 
+    connect();
+
     return () => {
-      try { ws.close(); } catch { /* no-op */ }
+      isMounted = false;
+      clearTimeout(reconnectTimer);
+      if (ws) {
+        try { ws.close(); } catch { /* no-op */ }
+      }
     };
   }, [filter, doctorFilter, patients]);
 

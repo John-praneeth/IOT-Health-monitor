@@ -787,10 +787,12 @@ def update_nurse(db: Session, nurse_id: int, payload: schemas.NurseUpdate, user_
 
 def delete_nurse(db: Session, nurse_id: int, user_id: int):
     """Hard delete: physically remove nurse from the DB.
-    Also nullifies nurse_id on any linked user accounts.
+    Also nullifies nurse_id on any linked user accounts and patients.
     """
     nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == nurse_id).first()
     if nurse:
+        # Nullify FK on linked patient records
+        db.query(models.Patient).filter(models.Patient.assigned_nurse == nurse_id).update({"assigned_nurse": None})
         # Nullify FK on linked user accounts before deleting
         db.query(models.User).filter(models.User.nurse_id == nurse_id).update({"nurse_id": None})
         # Delete nurse first; audit only after successful commit.

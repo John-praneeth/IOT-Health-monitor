@@ -250,7 +250,9 @@ export default function Patients() {
                       <select className="inline-select" value={p.assigned_doctor || ''}
                         onChange={e => handleAssignDoctor(p.patient_id, e.target.value)}>
                         <option value="">— None —</option>
-                        {filteredDoctors.map(d => (
+                        {doctors
+                          .filter(d => !specFilter || d.specialization === specFilter || String(d.doctor_id) === String(p.assigned_doctor))
+                          .map(d => (
                           <option key={d.doctor_id} value={d.doctor_id}>
                             {d.name} ({d.specialization || 'N/A'}) {d.is_freelancer ? '🟢' : ''}
                           </option>
