@@ -1406,8 +1406,6 @@ class ConnectionManager:
         self.active_connections: list[WebSocket] = []
         self._ip_counts: dict[str, int] = {}
         self._user_counts: dict[str, int] = {}
-        self._msg_counts: dict[str, int] = {}
-        self._msg_reset_time: dict[str, float] = {}
         self._conn_msg_times: dict[int, list[float]] = {}
         self._conn_user: dict[int, dict] = {}
 
@@ -1443,10 +1441,17 @@ class ConnectionManager:
     def disconnect(self, ws: WebSocket, client_ip: str = "unknown", user_key: str = "unknown"):
         if ws in self.active_connections:
             self.active_connections.remove(ws)
-        current = self._ip_counts.get(client_ip, 1)
-        self._ip_counts[client_ip] = max(0, current - 1)
-        user_current = self._user_counts.get(user_key, 1)
-        self._user_counts[user_key] = max(0, user_current - 1)
+        
+        if client_ip in self._ip_counts:
+            self._ip_counts[client_ip] -= 1
+            if self._ip_counts[client_ip] <= 0:
+                self._ip_counts.pop(client_ip, None)
+        
+        if user_key in self._user_counts:
+            self._user_counts[user_key] -= 1
+            if self._user_counts[user_key] <= 0:
+                self._user_counts.pop(user_key, None)
+
         self._conn_msg_times.pop(id(ws), None)
         self._conn_user.pop(id(ws), None)
 
@@ -1460,20 +1465,6 @@ class ConnectionManager:
             return False
         times.append(now)
         self._conn_msg_times[key] = times
-        return True
-
-    def check_message_rate(self, client_ip: str) -> bool:
-        """Return True if message can be sent, False if rate limited."""
-        import time
-        now = time.time()
-        reset = self._msg_reset_time.get(client_ip, 0)
-        if now - reset > 60:
-            self._msg_counts[client_ip] = 0
-            self._msg_reset_time[client_ip] = now
-        count = self._msg_counts.get(client_ip, 0)
-        if count >= WS_MESSAGES_PER_MINUTE:
-            return False
-        self._msg_counts[client_ip] = count + 1
         return True
 
     async def broadcast_vitals(self, message: str):

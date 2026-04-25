@@ -4,7 +4,7 @@ crud.py  –  Database operations for the Patient Monitor system.
 
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -34,7 +34,7 @@ def _active_source_name() -> str:
 def write_audit(db: Session, action: str, entity: str, entity_id: int = None, user_id: int = None):
     log = models.AuditLog(
         user_id=user_id, action=action, entity=entity,
-        entity_id=entity_id, timestamp=datetime.now(),
+        entity_id=entity_id, timestamp=datetime.now(timezone.utc),
     )
     db.add(log)
     db.commit()
@@ -179,7 +179,7 @@ def create_alert(db: Session, patient_id: int, vital_id: int, alert_type: str, s
     )
     if duplicate:
         # Update last_checked_at to track that abnormal vitals are still occurring
-        duplicate.last_checked_at = datetime.now()
+        duplicate.last_checked_at = datetime.now(timezone.utc)
         db.commit()
         logger.debug("Duplicate alert suppressed: %s for patient %s (updated last_checked_at)", alert_type, patient_id)
         return None  # Return None so callers know this is a duplicate, not a new alert
@@ -190,7 +190,7 @@ def create_alert(db: Session, patient_id: int, vital_id: int, alert_type: str, s
         alert_type=alert_type,
         source=source_name,
         status="PENDING",
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(new_alert)
     db.commit()
@@ -264,7 +264,7 @@ def acknowledge_alert(
 
     alert.status = "ACKNOWLEDGED"
     alert.acknowledged_by = current_user.user_id
-    alert.acknowledged_at = datetime.now()
+    alert.acknowledged_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(alert)
     write_audit(db, "ACKNOWLEDGE", "alert", entity_id=alert.alert_id, user_id=current_user.user_id)
@@ -277,7 +277,7 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
     Create escalation records for same-specialization doctors.
     Create notifications for those doctors + nurses at the patient's hospital.
     """
-    cutoff = datetime.now() - timedelta(minutes=threshold_minutes)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=threshold_minutes)
     source_name = _active_source_name()
     stale = (
         db.query(models.Alert)
@@ -339,7 +339,7 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
             esc = models.AlertEscalation(
                 alert_id=alert.alert_id,
                 escalated_to_doctor=doc.doctor_id,
-                escalated_at=datetime.now(),
+                escalated_at=datetime.now(timezone.utc),
             )
             db.add(esc)
 
@@ -350,7 +350,7 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
                     alert_id=alert.alert_id,
                     user_id=doc_user.user_id,
                     message=f"🔺 ESCALATED: {alert.alert_type} for patient {patient.name} (Room {patient.room_number}). Original doctor did not respond.",
-                    created_at=datetime.now(),
+                    created_at=datetime.now(timezone.utc),
                 )
                 db.add(notif)
 
@@ -359,7 +359,7 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
             esc = models.AlertEscalation(
                 alert_id=alert.alert_id,
                 escalated_to_doctor=assigned_doctor.doctor_id,
-                escalated_at=datetime.now(),
+                escalated_at=datetime.now(timezone.utc),
             )
             db.add(esc)
 
@@ -377,7 +377,7 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
                         alert_id=alert.alert_id,
                         user_id=nurse_user.user_id,
                         message=f"🔺 ESCALATED: {alert.alert_type} for patient {patient.name} (Room {patient.room_number}). Please check immediately.",
-                        created_at=datetime.now(),
+                        created_at=datetime.now(timezone.utc),
                     )
                     db.add(notif)
 
@@ -945,7 +945,7 @@ def create_chat_message(db: Session, patient_id: int,
         sender_username=sender_username,
         sender_role=sender_role,
         message=message,
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(msg)
     db.commit()
@@ -985,8 +985,8 @@ def create_whatsapp_log(db: Session, alert_id: int = None, recipient: str = "",
         attempts=1,
         error=error,
         idempotency_key=idempotency_key,
-        created_at=datetime.now(),
-        sent_at=datetime.now() if status == "SENT" else None,
+        created_at=datetime.now(timezone.utc),
+        sent_at=datetime.now(timezone.utc) if status == "SENT" else None,
     )
     db.add(log)
     db.commit()
