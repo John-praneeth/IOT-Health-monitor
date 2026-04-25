@@ -3,8 +3,12 @@ from typing import Optional, List
 from datetime import datetime
 
 
+class ProjectBaseModel(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
 # ── Vitals ──────────────────────────────────────────────────────────────────
-class VitalsBase(BaseModel):
+class VitalsBase(ProjectBaseModel):
     patient_id: int
     heart_rate: int = Field(..., ge=30, le=220)
     spo2: int = Field(..., ge=70, le=100)
@@ -18,11 +22,11 @@ class VitalsCreate(VitalsBase):
 class VitalsOut(VitalsBase):
     vital_id: Optional[int] = None
     timestamp: Optional[datetime] = None
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Alerts ───────────────────────────────────────────────────────────────────
-class AlertOut(BaseModel):
+class AlertOut(ProjectBaseModel):
     alert_id: int
     patient_id: int
     vital_id: Optional[int] = None
@@ -32,11 +36,11 @@ class AlertOut(BaseModel):
     last_checked_at: Optional[datetime] = None
     acknowledged_by: Optional[int] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Patients ─────────────────────────────────────────────────────────────────
-class PatientBase(BaseModel):
+class PatientBase(ProjectBaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     age: int = Field(..., ge=0, le=130)
     room_number: str = Field(..., min_length=1, max_length=20)
@@ -49,7 +53,7 @@ class PatientCreate(PatientBase):
     pass
 
 
-class PatientUpdate(BaseModel):
+class PatientUpdate(ProjectBaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     age: int = Field(..., ge=0, le=130)
     room_number: str = Field(..., min_length=1, max_length=20)
@@ -64,11 +68,11 @@ class PatientOut(PatientBase):
     nurse_name: Optional[str] = None
     hospital_name: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Hospitals ─────────────────────────────────────────────────────────────────
-class HospitalBase(BaseModel):
+class HospitalBase(ProjectBaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     location: str = Field(..., min_length=1, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
@@ -85,11 +89,11 @@ class HospitalUpdate(HospitalBase):
 
 class HospitalOut(HospitalBase):
     hospital_id: int
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Doctors ───────────────────────────────────────────────────────────────────
-class DoctorBase(BaseModel):
+class DoctorBase(ProjectBaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     specialization: Optional[str] = Field(None, max_length=100)
     hospital_id: Optional[int] = None
@@ -104,7 +108,7 @@ class DoctorCreate(DoctorBase):
     password: Optional[str] = None   # required when username is provided
 
 
-class DoctorUpdate(BaseModel):
+class DoctorUpdate(ProjectBaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     specialization: Optional[str] = Field(None, max_length=100)
     hospital_id: Optional[int] = None
@@ -117,11 +121,11 @@ class DoctorUpdate(BaseModel):
 class DoctorOut(DoctorBase):
     doctor_id: int
     hospital_name: Optional[str] = None
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Doctor Self-Registration ──────────────────────────────────────────────────
-class DoctorSelfRegister(BaseModel):
+class DoctorSelfRegister(ProjectBaseModel):
     """Used by POST /auth/register/doctor — creates Doctor + User in one step."""
     username: str = Field(..., min_length=3, max_length=100)
     password: str = Field(..., min_length=6)
@@ -134,7 +138,7 @@ class DoctorSelfRegister(BaseModel):
 
 
 # ── Nurses ────────────────────────────────────────────────────────────────────
-class NurseBase(BaseModel):
+class NurseBase(ProjectBaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     department: Optional[str] = Field(None, max_length=100)
     hospital_id: Optional[int] = None
@@ -147,7 +151,7 @@ class NurseCreate(NurseBase):
     password: Optional[str] = None   # required when username is provided
 
 
-class NurseUpdate(BaseModel):
+class NurseUpdate(ProjectBaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     department: Optional[str] = Field(None, max_length=100)
     hospital_id: Optional[int] = None
@@ -158,11 +162,11 @@ class NurseUpdate(BaseModel):
 class NurseOut(NurseBase):
     nurse_id: int
     hospital_name: Optional[str] = None
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Nurse Self-Registration ──────────────────────────────────────────────────
-class NurseSelfRegister(BaseModel):
+class NurseSelfRegister(ProjectBaseModel):
     """Used by POST /auth/register/nurse — creates Nurse + User in one step."""
     username: str = Field(..., min_length=3, max_length=100)
     password: str = Field(..., min_length=6)
@@ -174,16 +178,16 @@ class NurseSelfRegister(BaseModel):
 
 
 # ── Assignment ────────────────────────────────────────────────────────────────
-class AssignDoctor(BaseModel):
+class AssignDoctor(ProjectBaseModel):
     doctor_id: Optional[int] = None
 
 
-class AssignNurse(BaseModel):
+class AssignNurse(ProjectBaseModel):
     nurse_id: Optional[int] = None
 
 
 # ── Alert Acknowledge ─────────────────────────────────────────────────────────
-class AlertAcknowledge(BaseModel):
+class AlertAcknowledge(ProjectBaseModel):
     acknowledged_by: int
 
 
@@ -191,7 +195,7 @@ class AlertAcknowledge(BaseModel):
 #  AUTH SCHEMAS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class RegisterRequest(BaseModel):
+class RegisterRequest(ProjectBaseModel):
     """Staff registration (ADMIN creates other staff users)."""
     username: str = Field(..., min_length=3, max_length=100)
     password: str = Field(..., min_length=6)
@@ -200,27 +204,27 @@ class RegisterRequest(BaseModel):
     nurse_id: Optional[int] = None
 
 
-class LoginRequest(BaseModel):
+class LoginRequest(ProjectBaseModel):
     username: str = Field(..., min_length=1, max_length=100)
     password: str = Field(..., min_length=1, max_length=200)
 
 
-class ResetPasswordRequest(BaseModel):
+class ResetPasswordRequest(ProjectBaseModel):
     username: str = Field(..., min_length=1, max_length=100)
     new_password: str = Field(..., min_length=6, max_length=200)
 
 
-class ForgotPasswordStartRequest(BaseModel):
+class ForgotPasswordStartRequest(ProjectBaseModel):
     username: str = Field(..., min_length=1, max_length=100)
 
 
-class ForgotPasswordConfirmRequest(BaseModel):
+class ForgotPasswordConfirmRequest(ProjectBaseModel):
     username: str = Field(..., min_length=1, max_length=100)
     verification_code: str = Field(..., min_length=4, max_length=20)
     new_password: str = Field(..., min_length=6, max_length=200)
 
 
-class TokenResponse(BaseModel):
+class TokenResponse(ProjectBaseModel):
     access_token: str
     token_type: str = "bearer"
     role: str
@@ -229,28 +233,28 @@ class TokenResponse(BaseModel):
     nurse_id: Optional[int] = None
 
 
-class UserOut(BaseModel):
+class UserOut(ProjectBaseModel):
     user_id: int
     username: str
     role: str
     doctor_id: Optional[int] = None
     nurse_id: Optional[int] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Alert Escalation ─────────────────────────────────────────────────────────
-class EscalationOut(BaseModel):
+class EscalationOut(ProjectBaseModel):
     escalation_id: int
     alert_id: int
     escalated_to_doctor: int
     escalated_at: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Alert Notification ────────────────────────────────────────────────────────
-class AlertNotificationOut(BaseModel):
+class AlertNotificationOut(ProjectBaseModel):
     notification_id: int
     alert_id: int
     user_id: int
@@ -258,11 +262,11 @@ class AlertNotificationOut(BaseModel):
     is_read: bool
     created_at: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
-class AuditLogOut(BaseModel):
+class AuditLogOut(ProjectBaseModel):
     log_id: int
     user_id: Optional[int] = None
     action: str
@@ -270,15 +274,15 @@ class AuditLogOut(BaseModel):
     entity_id: Optional[int] = None
     timestamp: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Chat Messages ─────────────────────────────────────────────────────────────
-class ChatMessageCreate(BaseModel):
+class ChatMessageCreate(ProjectBaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
 
 
-class ChatMessageOut(BaseModel):
+class ChatMessageOut(ProjectBaseModel):
     message_id: int
     patient_id: int
     sender_username: str
@@ -286,11 +290,11 @@ class ChatMessageOut(BaseModel):
     message: str
     created_at: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Dashboard Stats ───────────────────────────────────────────────────────────
-class DashboardStats(BaseModel):
+class DashboardStats(ProjectBaseModel):
     total_patients: int
     total_doctors: int
     total_nurses: int
@@ -302,7 +306,7 @@ class DashboardStats(BaseModel):
 
 
 # ── WhatsApp Configuration ───────────────────────────────────────────────────
-class WhatsAppConfigOut(BaseModel):
+class WhatsAppConfigOut(ProjectBaseModel):
     enabled: bool
     alerts_paused: bool = False
     provider: str
@@ -312,30 +316,30 @@ class WhatsAppConfigOut(BaseModel):
     pending_acknowledgements: int = 0
 
 
-class WhatsAppRecipientAdd(BaseModel):
+class WhatsAppRecipientAdd(ProjectBaseModel):
     phone: str = Field(..., description="Phone number with country code (no + prefix), e.g. 919876543210")
 
 
-class WhatsAppRecipientRemove(BaseModel):
+class WhatsAppRecipientRemove(ProjectBaseModel):
     phone: str
 
 
-class WhatsAppRecipientsSet(BaseModel):
+class WhatsAppRecipientsSet(ProjectBaseModel):
     phones: List[str] = Field(..., description="List of phone numbers")
 
 
-class WhatsAppTestMessage(BaseModel):
+class WhatsAppTestMessage(ProjectBaseModel):
     phone: Optional[str] = Field(None, description="Phone number to test (optional, uses first recipient)")
 
 
-class WhatsAppTestResult(BaseModel):
+class WhatsAppTestResult(ProjectBaseModel):
     success: bool
     to: Optional[str] = None
     error: Optional[str] = None
 
 
 # ── WhatsApp Log ──────────────────────────────────────────────────────────────
-class WhatsAppLogOut(BaseModel):
+class WhatsAppLogOut(ProjectBaseModel):
     log_id: int
     alert_id: Optional[int] = None
     recipient: str
@@ -347,16 +351,16 @@ class WhatsAppLogOut(BaseModel):
     created_at: Optional[datetime] = None
     sent_at: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────
-class HealthDetail(BaseModel):
+class HealthDetail(ProjectBaseModel):
     status: str
     detail: Optional[str] = None
 
 
-class HealthCheckOut(BaseModel):
+class HealthCheckOut(ProjectBaseModel):
     status: str
     db: Optional[HealthDetail] = None
     redis: Optional[HealthDetail] = None
@@ -364,22 +368,22 @@ class HealthCheckOut(BaseModel):
 
 
 # ── Runtime / Maintenance Controls ───────────────────────────────────────────
-class FakeVitalsControlOut(BaseModel):
+class FakeVitalsControlOut(ProjectBaseModel):
     enabled: bool
 
 
-class FakeVitalsControlActionOut(BaseModel):
+class FakeVitalsControlActionOut(ProjectBaseModel):
     detail: str
     enabled: bool
 
 
-class VitalsCleanupRequest(BaseModel):
+class VitalsCleanupRequest(ProjectBaseModel):
     mode: str = Field(..., pattern=r"^(last_24h|last_7d|last_30d|before_datetime|all)$")
     before_datetime: Optional[datetime] = None
     source: str = Field(default="all", pattern=r"^(all|fake|thingspeak)$")
 
 
-class VitalsCleanupResultOut(BaseModel):
+class VitalsCleanupResultOut(ProjectBaseModel):
     detail: str
     deleted_vitals: int
     deleted_alerts: int
@@ -389,7 +393,7 @@ class VitalsCleanupResultOut(BaseModel):
     deleted_sla_records: int
 
 
-class FreshResetResultOut(BaseModel):
+class FreshResetResultOut(ProjectBaseModel):
     detail: str
     deleted_users: int
     deleted_patients: int
@@ -401,12 +405,12 @@ class FreshResetResultOut(BaseModel):
 
 
 # ── Pagination Meta ───────────────────────────────────────────────────────────
-class PaginationParams(BaseModel):
+class PaginationParams(ProjectBaseModel):
     limit: int = 50
     offset: int = 0
 
 
-class VitalsSourceConfigOut(BaseModel):
+class VitalsSourceConfigOut(ProjectBaseModel):
     source: str
     thingspeak_channel_id: Optional[str] = None
     thingspeak_read_api_key_set: bool = False
@@ -414,5 +418,5 @@ class VitalsSourceConfigOut(BaseModel):
     thingspeak_stale_seconds: int = 120
 
 
-class VitalsSourceConfigUpdate(BaseModel):
+class VitalsSourceConfigUpdate(ProjectBaseModel):
     source: str = Field(..., pattern=r"^(fake|thingspeak)$")

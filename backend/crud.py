@@ -233,9 +233,12 @@ def acknowledge_alert(
     current_user: models.User,
     allow_admin_override: bool = False,
 ):
-    alert = db.query(models.Alert).filter(models.Alert.alert_id == alert_id).first()
+    alert = db.query(models.Alert).filter(models.Alert.alert_id == alert_id).with_for_update().first()
     if not alert:
         return None
+
+    if alert.status == "ACKNOWLEDGED":
+        raise HTTPException(status_code=400, detail="Alert already acknowledged")
 
     patient = db.query(models.Patient).filter(models.Patient.patient_id == alert.patient_id).first()
     if not patient:

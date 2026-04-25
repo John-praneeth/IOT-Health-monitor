@@ -44,7 +44,7 @@ export default function Alerts() {
     const id = setInterval(load, 5000);
     // Load WhatsApp status once
     if (role === 'ADMIN') {
-      getWhatsAppConfig().then(res => setWhatsappStatus(res.data)).catch(() => {});
+      getWhatsAppConfig().then(res => setWhatsappStatus(res.data)).catch(err => console.error("Failed to load WhatsApp config:", err));
     }
     return () => clearInterval(id);
   }, [load, role]);

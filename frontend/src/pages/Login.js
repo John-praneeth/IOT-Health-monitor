@@ -59,7 +59,7 @@ export default function Login({ onLogin }) {
   });
 
   useEffect(() => {
-    getHospitals().then(r => setHospitals(r.data)).catch(() => {});
+    getHospitals().then(r => setHospitals(r.data)).catch(err => console.error("Failed to load hospitals:", err));
   }, []);
 
   const humanizeApiError = (err, fallback) => {

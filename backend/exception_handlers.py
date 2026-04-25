@@ -49,9 +49,16 @@ def setup_exception_handlers(app: FastAPI):
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        safe_errors = []
+        for err in exc.errors():
+            safe_err = err.copy()
+            safe_err.pop('input', None)
+            safe_err.pop('url', None)
+            safe_errors.append(safe_err)
+            
         logger.warning(
             "Validation error: %s %s – %s",
-            request.method, request.url.path, str(exc.errors())[:500],
+            request.method, request.url.path, str(safe_errors)[:500],
             extra={"action": "validation_error"},
         )
         return JSONResponse(
@@ -62,7 +69,7 @@ def setup_exception_handlers(app: FastAPI):
                     "code": 422,
                     "message": "Validation error",
                     "type": "ValidationError",
-                    "details": exc.errors() if not IS_PRODUCTION else "Invalid request data",
+                    "details": safe_errors if not IS_PRODUCTION else "Invalid request data",
                 },
             },
         )
