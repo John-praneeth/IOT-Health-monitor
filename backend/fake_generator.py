@@ -14,11 +14,13 @@ from data_sources import get_source
 logger = logging.getLogger(__name__)
 
 
-def save_fake(db, patient_id: int):
+def save_fake(db, patient_id: int, source=None):
     """Generate vitals via the active source, persist them, then run the alert engine.
     Sends WhatsApp notifications for any triggered alerts.
     """
-    source = get_source()
+    if source is None:
+        source = get_source()
+        
     data = source.get_vitals(patient_id)
 
     # Persist vitals

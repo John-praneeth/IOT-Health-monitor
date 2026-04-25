@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 import httpx
 from data_sources.base import VitalSource
+from data_sources.fake_source import FakeSource
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class ThingSpeakSource(VitalSource):
         self.api_key = api_key
         self.temp_unit = temp_unit.upper()
         self.stale_threshold = stale_threshold
+        self._fallback_source = FakeSource()
         logger.info(
             "ThingSpeak source initialised — channel=%s  temp_unit=%s",
             self.channel_id or "(not set)", self.temp_unit,
@@ -143,13 +145,10 @@ class ThingSpeakSource(VitalSource):
         except (ValueError, TypeError):
             return default
 
-    @staticmethod
-    def _fallback(patient_id: int, reason: str) -> dict:
-        """Return safe normal-range vitals (won't trigger alerts)."""
-        logger.warning("Using fallback vitals for patient %d (%s)", patient_id, reason)
-        return {
-            "patient_id": patient_id,
-            "heart_rate": 75,
-            "spo2": 98,
-            "temperature": 98.6,
-        }
+    def _fallback(self, patient_id: int, reason: str) -> dict:
+        """Return dynamic fallback vitals so the UI stays alive when IoT hardware fails."""
+        logger.warning("Using dynamic FakeSource fallback for patient %d (%s)", patient_id, reason)
+        vitals = self._fallback_source.get_vitals(patient_id)
+        # We can add an indicator that this is fallback data if needed by the frontend
+        vitals["is_fallback"] = True
+        return vitals

@@ -156,6 +156,19 @@ export default function Dashboard() {
               <span className="live-dot" />
               LIVE {lastRefresh && `· Updated ${lastRefresh}`}
             </span>
+            {sourceConfig && (
+              <span style={{
+                marginLeft: 12,
+                fontSize: 11,
+                padding: '4px 8px',
+                borderRadius: 6,
+                background: sourceConfig.source === 'thingspeak' ? 'rgba(59,130,246,0.2)' : 'rgba(16,185,129,0.2)',
+                color: sourceConfig.source === 'thingspeak' ? '#93c5fd' : '#6ee7b7',
+                border: `1px solid ${sourceConfig.source === 'thingspeak' ? 'rgba(59,130,246,0.4)' : 'rgba(16,185,129,0.4)'}`,
+              }}>
+                {sourceConfig.source === 'thingspeak' ? '📡 Real IoT Hardware' : '🎲 Simulated Vitals'}
+              </span>
+            )}
           </p>
         </div>
         {/* Notification Bell */}

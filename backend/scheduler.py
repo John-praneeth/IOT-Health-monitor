@@ -82,9 +82,10 @@ def run():
                 logging.warning("No patients found in DB.  Waiting…")
 
             # ── Generate vitals from active data source ──────────────────
+            active_source = data_sources.get_source()
             vitals_snapshot = []
             for p in patients:
-                vital, alerts = fake_generator.save_fake(db, p.patient_id)
+                vital, alerts = fake_generator.save_fake(db, p.patient_id, source=active_source)
                 alert_str = ", ".join(alerts) if alerts else "—"
                 logging.info(
                     "Patient %-3s | HR=%3d  SpO2=%3d%%  Temp=%.1f°F | Alerts: %s",
