@@ -251,15 +251,20 @@ def _set_refresh_cookie(response: Response, refresh_token: str):
         key=auth.REFRESH_COOKIE_NAME,
         value=refresh_token,
         httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="lax",
+        secure=True if IS_PRODUCTION else COOKIE_SECURE,
+        samesite="none" if IS_PRODUCTION else "lax",
         max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         path="/",
     )
 
 
 def _clear_refresh_cookie(response: Response):
-    response.delete_cookie(key=auth.REFRESH_COOKIE_NAME, path="/")
+    response.delete_cookie(
+        key=auth.REFRESH_COOKIE_NAME,
+        path="/",
+        secure=True if IS_PRODUCTION else COOKIE_SECURE,
+        samesite="none" if IS_PRODUCTION else "lax",
+    )
 
 
 def _setting_bool(db: Session, key: str, default: bool = False) -> bool:

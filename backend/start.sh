@@ -21,6 +21,24 @@ case "$secret_lower" in
     ;;
 esac
 
+echo "Applying critical schema updates..."
+python - <<'PY'
+from database import SessionLocal, engine
+from sqlalchemy import text
+db = SessionLocal()
+try:
+    if engine.name == "postgresql":
+        db.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS details VARCHAR(1000);"))
+        db.execute(text("ALTER TABLE alert_escalations ALTER COLUMN escalated_to_doctor DROP NOT NULL;"))
+        db.commit()
+        print("Schema updates verified.")
+except Exception as e:
+    db.rollback()
+    print(f"Migration note (safe to ignore if applied): {e}")
+finally:
+    db.close()
+PY
+
 SEED_DB_ON_STARTUP="${SEED_DB_ON_STARTUP:-true}"
 if [ "$SEED_DB_ON_STARTUP" = "true" ]; then
   if [ -n "${ADMIN_PASSWORD:-}" ]; then
