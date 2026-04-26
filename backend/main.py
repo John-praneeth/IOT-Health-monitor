@@ -756,10 +756,11 @@ def create_hospital(
     current_user: models.User = Depends(auth.require_role("ADMIN")),
     db: Session = Depends(get_db),
 ):
-    return crud.create_hospital(db, hospital)
+    return crud.create_hospital(db, hospital, user_id=current_user.user_id)
 
 
-@app.put("/hospitals/{hospital_id}", response_model=schemas.HospitalOut, tags=["Hospitals"])
+@app.get("/hospitals/{hospital_id}", response_model=schemas.HospitalOut, tags=["Hospitals"])
+
 def update_hospital(
     hospital_id: int,
     payload: schemas.HospitalUpdate,

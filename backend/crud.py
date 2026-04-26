@@ -848,12 +848,12 @@ def get_hospitals(db: Session):
     return db.query(models.Hospital).all()
 
 
-def create_hospital(db: Session, hospital: schemas.HospitalCreate):
+def create_hospital(db: Session, hospital: schemas.HospitalCreate, user_id: int):
     db_hospital = models.Hospital(**hospital.model_dump())
     db.add(db_hospital)
     db.commit()
     db.refresh(db_hospital)
-    write_audit(db, "CREATE", "hospital", entity_id=db_hospital.hospital_id)
+    write_audit(db, "CREATE", "hospital", entity_id=db_hospital.hospital_id, user_id=user_id)
     return db_hospital
 
 
