@@ -168,7 +168,9 @@ mandatory_origins = [
     "http://localhost:3000",
     "http://localhost:5173",
     "https://iot-healthcare.vercel.app",
+    "https://iot-healthcare.vercel.app/",
     "https://iot-healthcare-backend.onrender.com",
+    "https://iot-healthcare-backend.onrender.com/",
 ]
 
 for mo in mandatory_origins:
@@ -499,25 +501,28 @@ def login(body: schemas.LoginRequest, request: Request, response: Response, db: 
     logger.info("User logged in: %s (role: %s)", user.username, user.role,
                 extra={"action": "login_success"})
 
-    total = stage_marks["audit_write"] - t0
-    if total >= 1.5:
-        logger.warning(
-            "Slow login detected for user=%s ip=%s total=%.3fs timings=%s",
-            body.username,
-            client_ip,
-            total,
-            {
-                "ip_check": round(stage_marks["ip_block_check"] - stage_marks["client_ip"], 3),
-                "user_lookup": round(stage_marks["user_lookup"] - stage_marks["ip_block_check"], 3),
-                "password_verify": round(stage_marks["password_verify"] - stage_marks["user_lookup"], 3),
-                "failed_reset": round(stage_marks["failed_login_reset"] - stage_marks["password_verify"], 3),
-                "issue_tokens": round(stage_marks["issue_token_pair"] - stage_marks["failed_login_reset"], 3),
-                "decode_tokens": round(stage_marks["decode_tokens"] - stage_marks["issue_token_pair"], 3),
-                "bind_refresh": round(stage_marks["bind_refresh"] - stage_marks["decode_tokens"], 3),
-                "revoke_old": round(stage_marks["revoke_old_tokens"] - stage_marks["bind_refresh"], 3),
-                "audit_write": round(stage_marks["audit_write"] - stage_marks["revoke_old_tokens"], 3),
-            },
-        )
+    # Record timing metrics safely
+    audit_time = stage_marks.get("audit_write")
+    if audit_time:
+        total = audit_time - t0
+        if total >= 1.5:
+            logger.warning(
+                "Slow login detected for user=%s ip=%s total=%.3fs timings=%s",
+                body.username,
+                client_ip,
+                total,
+                {
+                    "ip_check": round(stage_marks.get("ip_block_check", 0) - stage_marks.get("client_ip", 0), 3),
+                    "user_lookup": round(stage_marks.get("user_lookup", 0) - stage_marks.get("ip_block_check", 0), 3),
+                    "password_verify": round(stage_marks.get("password_verify", 0) - stage_marks.get("user_lookup", 0), 3),
+                    "failed_reset": round(stage_marks.get("failed_login_reset", 0) - stage_marks.get("password_verify", 0), 3),
+                    "issue_tokens": round(stage_marks.get("issue_token_pair", 0) - stage_marks.get("failed_login_reset", 0), 3),
+                    "decode_tokens": round(stage_marks.get("decode_tokens", 0) - stage_marks.get("issue_token_pair", 0), 3),
+                    "bind_refresh": round(stage_marks.get("bind_refresh", 0) - stage_marks.get("decode_tokens", 0), 3),
+                    "revoke_old": round(stage_marks.get("revoke_old_tokens", 0) - stage_marks.get("bind_refresh", 0), 3),
+                    "audit_write": round(stage_marks.get("audit_write", 0) - stage_marks.get("revoke_old_tokens", 0), 3),
+                },
+            )
 
     return schemas.TokenResponse(
         access_token=token, role=user.role, username=user.username,
