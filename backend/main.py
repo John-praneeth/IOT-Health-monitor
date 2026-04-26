@@ -96,6 +96,7 @@ WS_MESSAGES_PER_MINUTE = int(os.getenv("WS_MESSAGES_PER_MINUTE", "120"))
 WS_MESSAGES_PER_SECOND = int(os.getenv("WS_MESSAGES_PER_SECOND", "10"))
 WS_BROADCAST_MODE = os.getenv("WS_BROADCAST_MODE", "event")  # "event" (incremental) or "full"
 WS_REDIS_CHANNEL = "iot:vitals"
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
 ALLOW_ADMIN_ALERT_ACK = os.getenv("ALLOW_ADMIN_ALERT_ACK", "false").lower() in ("1", "true", "yes")
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
 MAX_PAGE_SIZE = 500
@@ -2258,6 +2259,12 @@ def fresh_reset_domain_data(
     current_user: models.User = Depends(auth.require_role("ADMIN")),
     db: Session = Depends(get_db),
 ):
+    if IS_PRODUCTION and os.getenv("ALLOW_DANGEROUS_RESET", "false").lower() != "true":
+        raise HTTPException(
+            status_code=400,
+            detail="Fresh reset is disabled in production. Set ALLOW_DANGEROUS_RESET=true to override."
+        )
+        
     deleted_users = db.query(models.User).filter(models.User.role != "ADMIN").count()
     deleted_patients = db.query(models.Patient).count()
     deleted_doctors = db.query(models.Doctor).count()

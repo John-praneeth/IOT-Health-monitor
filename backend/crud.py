@@ -297,6 +297,22 @@ def acknowledge_alert(
     alert.status = "ACKNOWLEDGED"
     alert.acknowledged_by = current_user.user_id
     alert.acknowledged_at = datetime.now(timezone.utc)
+    
+    # ── Create SLA Record ──
+    try:
+        response_time = (alert.acknowledged_at - alert.created_at).total_seconds()
+        # Mark as breached if it took longer than 2 minutes (120s) to acknowledge
+        sla = models.SLARecord(
+            alert_id=alert.alert_id,
+            patient_id=alert.patient_id,
+            response_time_seconds=int(response_time),
+            breached=(response_time > 120),
+            created_at=datetime.now(timezone.utc)
+        )
+        db.add(sla)
+    except Exception as e:
+        logger.error("Failed to create SLA record: %s", e)
+
     db.commit()
     db.refresh(alert)
     write_audit(db, "ACKNOWLEDGE", "alert", entity_id=alert.alert_id, user_id=current_user.user_id)
@@ -962,6 +978,22 @@ def get_dashboard_stats(db: Session, current_user: models.User):
             ]
         alert_q = alert_q.filter(models.Alert.patient_id.in_(patient_ids_for_scope or [-1]))
 
+    # ── SLA & Performance Metrics ──
+    avg_resp = 0
+    sla_breaches = 0
+    try:
+        sla_q = db.query(models.SLARecord)
+        if patient_ids_for_scope:
+            sla_q = sla_q.filter(models.SLARecord.patient_id.in_(patient_ids_for_scope))
+        
+        sla_breaches = sla_q.filter(models.SLARecord.breached == True).count()
+        avg_resp_row = db.query(func.avg(models.SLARecord.response_time_seconds)).filter(
+            models.SLARecord.patient_id.in_(patient_ids_for_scope) if patient_ids_for_scope else True
+        ).first()
+        avg_resp = float(avg_resp_row[0] or 0)
+    except Exception as e:
+        logger.error("Error computing Dashboard SLA metrics: %s", e)
+
     return schemas.DashboardStats(
         total_patients=patient_q.count(),
         total_doctors=db.query(models.Doctor).count(),
@@ -971,6 +1003,8 @@ def get_dashboard_stats(db: Session, current_user: models.User):
         escalated_alerts=alert_q.filter(models.Alert.status == "ESCALATED").count(),
         acknowledged_alerts=alert_q.filter(models.Alert.status == "ACKNOWLEDGED").count(),
         duplicate_vitals_count=_duplicate_vitals_count_for_patients(db, patient_ids_for_scope, source=source_name),
+        avg_response_time_seconds=avg_resp,
+        sla_breach_count=sla_breaches
     )
 
 

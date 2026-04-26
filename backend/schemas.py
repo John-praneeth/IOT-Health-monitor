@@ -336,6 +336,8 @@ class DashboardStats(ProjectBaseModel):
     escalated_alerts: int
     acknowledged_alerts: int
     duplicate_vitals_count: int = 0
+    avg_response_time_seconds: Optional[float] = 0
+    sla_breach_count: int = 0
 
 
 # ── WhatsApp Configuration ───────────────────────────────────────────────────

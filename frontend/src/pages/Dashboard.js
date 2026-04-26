@@ -225,12 +225,16 @@ export default function Dashboard() {
           <div className="value">{counts.critical}</div>
         </div>
         <div className="stat-card amber">
-          <div className="label">Pending Alerts</div>
-          <div className="value">{pndA}</div>
+          <div className="label">Avg Triage Time</div>
+          <div className="value">
+            {stats?.avg_response_time_seconds ? (stats.avg_response_time_seconds < 60 ? `${Math.round(stats.avg_response_time_seconds)}s` : `${Math.round(stats.avg_response_time_seconds/60)}m`) : '—'}
+          </div>
         </div>
-        <div className="stat-card green">
-          <div className="label">Stable Ward</div>
-          <div className="value">{counts.normal}</div>
+        <div className="stat-card red">
+          <div className="label">SLA Breaches</div>
+          <div className="value" style={{ color: (stats?.sla_breach_count > 0) ? '#f43f5e' : 'inherit' }}>
+            {stats?.sla_breach_count ?? 0}
+          </div>
         </div>
       </div>
 
