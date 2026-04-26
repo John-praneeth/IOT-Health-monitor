@@ -136,7 +136,7 @@ class DoctorOut(DoctorBase):
 class DoctorSelfRegister(ProjectBaseModel):
     """Used by POST /auth/register/doctor — creates Doctor + User in one step."""
     username: str = Field(..., min_length=3, max_length=100)
-    password: str = Field(..., min_length=8, max_length=200)
+    password: str = Field(..., min_length=8, max_length=200, str_strip_whitespace=False)
     name: str = Field(..., min_length=1, max_length=100)
     specialization: str = Field(..., min_length=1, max_length=100)
     hospital_id: Optional[int] = None
@@ -182,7 +182,7 @@ class NurseOut(NurseBase):
 class NurseSelfRegister(ProjectBaseModel):
     """Used by POST /auth/register/nurse — creates Nurse + User in one step."""
     username: str = Field(..., min_length=3, max_length=100)
-    password: str = Field(..., min_length=8, max_length=200)
+    password: str = Field(..., min_length=8, max_length=200, str_strip_whitespace=False)
     name: str = Field(..., min_length=1, max_length=100)
     department: Optional[str] = Field(None, max_length=100)
     hospital_id: Optional[int] = None
@@ -216,7 +216,7 @@ class AlertAcknowledge(ProjectBaseModel):
 class RegisterRequest(ProjectBaseModel):
     """Staff registration (ADMIN creates other staff users)."""
     username: str = Field(..., min_length=3, max_length=100)
-    password: str = Field(..., min_length=8, max_length=200)
+    password: str = Field(..., min_length=8, max_length=200, str_strip_whitespace=False)
     role: str = Field(..., pattern=r"^(ADMIN|DOCTOR|NURSE)$")
     doctor_id: Optional[int] = None
     nurse_id: Optional[int] = None
@@ -229,12 +229,12 @@ class RegisterRequest(ProjectBaseModel):
 
 class LoginRequest(ProjectBaseModel):
     username: str = Field(..., min_length=1, max_length=100)
-    password: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=1, max_length=200, str_strip_whitespace=False)
 
 
 class ResetPasswordRequest(ProjectBaseModel):
     username: str = Field(..., min_length=1, max_length=100)
-    new_password: str = Field(..., min_length=8, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=200, str_strip_whitespace=False)
 
     @field_validator("new_password")
     @classmethod
@@ -248,8 +248,8 @@ class ForgotPasswordStartRequest(ProjectBaseModel):
 
 class ForgotPasswordConfirmRequest(ProjectBaseModel):
     username: str = Field(..., min_length=1, max_length=100)
-    verification_code: str = Field(..., min_length=4, max_length=20)
-    new_password: str = Field(..., min_length=8, max_length=200)
+    verification_code: str = Field(..., min_length=4, max_length=20, str_strip_whitespace=False)
+    new_password: str = Field(..., min_length=8, max_length=200, str_strip_whitespace=False)
 
     @field_validator("new_password")
     @classmethod

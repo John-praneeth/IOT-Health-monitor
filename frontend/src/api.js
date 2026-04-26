@@ -2,7 +2,7 @@ import axios from 'axios';
 import { API_BASE_URL } from './config';
 
 const API = axios.create({ baseURL: API_BASE_URL });
-const AUTH_TIMEOUT_MS = 15000;
+const AUTH_TIMEOUT_MS = 45000;
 
 // ── Token interceptor: attach JWT to every request if available ──
 API.interceptors.request.use((config) => {

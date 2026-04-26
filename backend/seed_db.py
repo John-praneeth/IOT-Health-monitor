@@ -38,9 +38,13 @@ try:
     # ── Create admin user only ────────────────────────────────────────────────
     if not ADMIN_PASSWORD:
         raise RuntimeError("ADMIN_PASSWORD must be set to create the initial admin user.")
-    weak_passwords = {"admin123", "password", "change-me", "changeme", "admin"}
-    if ADMIN_PASSWORD.lower() in weak_passwords or len(ADMIN_PASSWORD) < 12:
-        raise RuntimeError("ADMIN_PASSWORD is too weak. Use at least 12 characters and avoid default values.")
+    
+    if len(ADMIN_PASSWORD) < 8:
+        raise RuntimeError("ADMIN_PASSWORD is too weak. Use at least 8 characters.")
+
+    weak_passwords = {"password", "admin123", "changeme", "admin"}
+    if ADMIN_PASSWORD.lower() in weak_passwords:
+        print("⚠️  WARNING: Using a very common ADMIN_PASSWORD. Highly recommended to change this in production.")
 
     admin = User(
         username=ADMIN_USERNAME,
