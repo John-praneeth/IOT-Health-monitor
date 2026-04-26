@@ -432,6 +432,16 @@ def send_whatsapp_message(phone: str, body: str, retries: int = 3,
                     "❌ GREEN-API error for %s: HTTP %d – %s (attempt %d/%d)",
                     phone, response.status_code, response.text[:200], attempt, retries,
                 )
+                
+                # v5.2 Resiliency: If buttons are blocked by provider, fallback to plain text instantly
+                if buttons and response.status_code in (400, 403, 404):
+                    logger.warning("Interactive buttons rejected by WhatsApp provider. Falling back to standard text message.")
+                    buttons = None
+                    method = "sendMessage"
+                    payload = {"chatId": chat_id, "message": body}
+                    url = f"{GREEN_API_URL}/waInstance{GREEN_API_ID}/{method}/{GREEN_API_TOKEN}"
+                    continue # Retry immediately with plain text
+
         except httpx.TimeoutException:
             logger.error("⏱️ Timeout sending WhatsApp to %s (attempt %d/%d)", phone, attempt, retries)
         except Exception as e:
