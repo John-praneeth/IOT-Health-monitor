@@ -90,7 +90,7 @@ def sync_alerts_for_vital(db: Session, vital_record: models.Vitals):
     """
     patient_id = vital_record.patient_id
     source = _normalize_source_name(getattr(vital_record, "source", None) or _active_source_name())
-    triggered = alert_engine.check_alerts(vital_record)
+    triggered = alert_engine.check_alerts(vital_record, db=db)
 
     if not triggered:
         pending = db.query(models.Alert).filter(
