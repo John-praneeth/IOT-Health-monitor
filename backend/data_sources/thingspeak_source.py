@@ -106,7 +106,8 @@ class ThingSpeakSource(VitalSource):
         if hr <= 0 or spo2 <= 0 or temp <= 0:
             return self._fallback(patient_id, "sensor_zero")
 
-        if not (20 < hr < 300) or not (40 < spo2 <= 100) or not (70 < temp < 115):
+        # Allow lower SpO2 for hardware test values (e.g. sensor returning 36)
+        if not (20 < hr < 300) or not (0 < spo2 <= 100) or not (70 < temp < 115):
             return self._fallback(patient_id, "invalid_range")
 
         # ── Stale-data check ─────────────────────────────────────────────

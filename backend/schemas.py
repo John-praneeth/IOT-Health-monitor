@@ -18,9 +18,9 @@ def validate_password_complexity(v: str) -> str:
 # ── Vitals ──────────────────────────────────────────────────────────────────
 class VitalsBase(ProjectBaseModel):
     patient_id: int
-    heart_rate: int = Field(..., ge=30, le=220)
-    spo2: int = Field(..., ge=70, le=100)
-    temperature: float = Field(..., ge=85, le=110)
+    heart_rate: int = Field(..., ge=0, le=300)
+    spo2: int = Field(..., ge=0, le=100)
+    temperature: float = Field(..., ge=50, le=150)
 
 
 class VitalsCreate(VitalsBase):
