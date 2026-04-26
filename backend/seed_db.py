@@ -18,9 +18,23 @@ sys.path.insert(0, os.path.dirname(__file__))
 from database import SessionLocal, engine, Base
 from models import User
 from auth import hash_password
+from sqlalchemy import text
 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
+# ── Auto-apply critical schema updates (for Render bypass) ───────────────
+print("Applying critical schema updates...")
+with SessionLocal() as mig_db:
+    try:
+        if engine.name == "postgresql":
+            mig_db.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS details VARCHAR(1000);"))
+            mig_db.execute(text("ALTER TABLE alert_escalations ALTER COLUMN escalated_to_doctor DROP NOT NULL;"))
+            mig_db.commit()
+            print("Schema updates verified.")
+    except Exception as e:
+        mig_db.rollback()
+        print(f"Migration note (safe to ignore if applied): {e}")
 
 # Ensure all tables exist
 Base.metadata.create_all(bind=engine)
