@@ -28,14 +28,18 @@ export default function Vitals() {
       const params = { limit: 100 };
       if (filter)       params.patient_id = parseInt(filter);
       if (doctorFilter) params.doctor_id  = parseInt(doctorFilter);
-      const [vRes, pRes, dRes] = await Promise.all([
+      const results = await Promise.allSettled([
         getVitals(params),
         getPatients(),
         getDoctors(),
       ]);
-      setVitals(vRes.data);
-      setPatients(pRes.data);
-      setDoctors(dRes.data);
+
+      const [vRes, pRes, dRes] = results;
+
+      if (vRes.status === 'fulfilled') setVitals(vRes.value.data);
+      if (pRes.status === 'fulfilled') setPatients(pRes.value.data);
+      if (dRes.status === 'fulfilled') setDoctors(dRes.value.data);
+
       setLastRefresh(new Date().toLocaleTimeString());
     } catch (err) {
       console.error(err);
@@ -67,13 +71,18 @@ export default function Vitals() {
           const parsed = JSON.parse(event.data);
           if (!Array.isArray(parsed) || parsed.length === 0) return;
 
+          // Create a quick lookup for doctor filtering
+          const patientDocMap = {};
+          if (doctorFilter) {
+            patients.forEach(p => patientDocMap[p.patient_id] = p.assigned_doctor);
+          }
+
           const incoming = parsed
             .filter(v => v?.patient_id != null)
             .filter(v => !filter || String(v.patient_id) === String(filter))
             .filter(v => {
               if (!doctorFilter) return true;
-              const patient = patients.find(p => p.patient_id === v.patient_id);
-              return patient && String(patient.assigned_doctor) === String(doctorFilter);
+              return String(patientDocMap[v.patient_id]) === String(doctorFilter);
             })
             .map(v => ({
               ...v,

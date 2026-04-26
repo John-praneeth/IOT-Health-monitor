@@ -60,11 +60,17 @@ export default function Doctors() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!form.name.trim()) {
+      setError('Physician name is required for registration.');
+      return;
+    }
     setError('');
     try {
       const cleanPhone = form.phone.replace(/[^0-9]/g, '').replace(/^0+/, '');
       await createDoctor({
         ...form,
+        name: form.name.trim(),
+        specialization: (form.specialization || '').trim(),
         phone: cleanPhone ? countryCode + cleanPhone : '',
         hospital_id: form.hospital_id ? parseInt(form.hospital_id) : null,
       });

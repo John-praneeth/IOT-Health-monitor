@@ -54,11 +54,17 @@ export default function Hospitals() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!form.name.trim() || !form.location.trim()) {
+      setError('Hospital name and location are required for registration.');
+      return;
+    }
     setError('');
     try {
       const cleanPhone = form.phone.replace(/[^0-9]/g, '').replace(/^0+/, '');
       await createHospital({
         ...form,
+        name: form.name.trim(),
+        location: form.location.trim(),
         phone: cleanPhone ? countryCode + cleanPhone : '',
       });
       setForm(EMPTY);

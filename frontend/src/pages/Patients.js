@@ -59,10 +59,16 @@ export default function Patients() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!form.name.trim() || !form.room_number.trim()) {
+      setError('Patient name and room number are mandatory clinical fields.');
+      return;
+    }
     setError('');
     try {
       await createPatient({
         ...form,
+        name:            form.name.trim(),
+        room_number:     form.room_number.trim(),
         age:             parseInt(form.age),
         hospital_id:     form.hospital_id     ? parseInt(form.hospital_id)     : null,
         assigned_doctor: form.assigned_doctor ? parseInt(form.assigned_doctor) : null,

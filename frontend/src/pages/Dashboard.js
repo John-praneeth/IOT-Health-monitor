@@ -21,25 +21,30 @@ export default function Dashboard() {
   const fetchAll = useCallback(async () => {
     try {
       const params = doctorFilter ? { doctor_id: doctorFilter } : {};
-      const [pRes, aRes, dRes, sRes, vRes] = await Promise.all([
+      const results = await Promise.allSettled([
         getPatients(params),
         getAlerts(doctorFilter ? { doctor_id: doctorFilter } : {}),
         getDoctors(),
         getDashboardStats(),
         getVitals({ limit: 100, ...(doctorFilter ? { doctor_id: doctorFilter } : {}) }),
       ]);
-      setPatients(pRes.data);
-      setAlerts(aRes.data);
-      setDoctors(dRes.data);
-      setStats(sRes.data);
+
+      const [pRes, aRes, dRes, sRes, vRes] = results;
+
+      if (pRes.status === 'fulfilled') setPatients(pRes.value.data);
+      if (aRes.status === 'fulfilled') setAlerts(aRes.value.data);
+      if (dRes.status === 'fulfilled') setDoctors(dRes.value.data);
+      if (sRes.status === 'fulfilled') setStats(sRes.value.data);
       
-      const latestByPatient = {};
-      (vRes.data || []).forEach(v => {
-        if (v?.patient_id != null && !latestByPatient[v.patient_id]) {
-          latestByPatient[v.patient_id] = v;
-        }
-      });
-      setLiveVitals(prev => ({ ...latestByPatient, ...prev }));
+      if (vRes.status === 'fulfilled') {
+        const latestByPatient = {};
+        (vRes.value.data || []).forEach(v => {
+          if (v?.patient_id != null && !latestByPatient[v.patient_id]) {
+            latestByPatient[v.patient_id] = v;
+          }
+        });
+        setLiveVitals(prev => ({ ...latestByPatient, ...prev }));
+      }
 
       if (role === 'ADMIN') {
         getVitalsSourceConfig().then(res => setSourceConfig(res.data)).catch(() => setSourceConfig(null));

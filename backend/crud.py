@@ -6,7 +6,7 @@ import os
 import logging
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 import models
@@ -506,7 +506,11 @@ def get_patients(
     limit: int = 200,
     offset: int = 0,
 ):
-    q = db.query(models.Patient)
+    q = db.query(models.Patient).options(
+        joinedload(models.Patient.doctor),
+        joinedload(models.Patient.nurse),
+        joinedload(models.Patient.hospital)
+    )
     if doctor_id:
         q = q.filter(models.Patient.assigned_doctor == doctor_id)
     if nurse_id:
