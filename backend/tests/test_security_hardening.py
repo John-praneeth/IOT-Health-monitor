@@ -255,9 +255,8 @@ def test_alert_not_sent_to_nurse(monkeypatch):
     monkeypatch.setattr(
         whatsapp_notifier,
         "send_whatsapp_message",
-        lambda phone, body, alert_id=None, event_type="NEW", retries=3: sent_to.append(phone) or True,
+        lambda phone, body, alert_id=None, event_type="NEW", retries=3, buttons=None: sent_to.append(phone) or True,
     )
-
     whatsapp_notifier.send_alert_notification(
         alert_type="LOW_SPO2",
         patient_name="P1",
@@ -285,9 +284,8 @@ def test_escalation_uses_explicit_recipients(monkeypatch):
     monkeypatch.setattr(
         whatsapp_notifier,
         "send_whatsapp_message",
-        lambda phone, body, alert_id=None, event_type="NEW", retries=3: sent_to.append(phone) or True,
+        lambda phone, body, alert_id=None, event_type="NEW", retries=3, buttons=None: sent_to.append(phone) or True,
     )
-
     result = whatsapp_notifier.send_escalation_notification(
         alert_type="LOW_SPO2",
         patient_name="P1",

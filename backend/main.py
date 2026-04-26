@@ -1889,10 +1889,18 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
 
         # Parse message text
         message_data = body.get("messageData", {})
-        text_data = message_data.get("textMessageData", {})
-        text = text_data.get("textMessage", "").strip()
+        msg_type_inner = message_data.get("typeMessage")
+        
+        text = ""
+        if msg_type_inner == "textMessage":
+            text_data = message_data.get("textMessageData", {})
+            text = text_data.get("textMessage", "").strip()
+        elif msg_type_inner == "buttonsResponseMessage":
+            buttons_data = message_data.get("buttonsResponseMessage", {})
+            # We map buttonId to the clinical command (e.g. "ACK 123")
+            text = buttons_data.get("buttonId", "").strip()
 
-        logger.info("WhatsApp reply from %s: '%s'", sender_phone, text)
+        logger.info("WhatsApp reply from %s: '%s' (type: %s)", sender_phone, text, msg_type_inner)
 
         text_upper = text.upper()
 
@@ -1996,6 +2004,13 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
                 return {"status": "acknowledged", "alert_ids": [alert.alert_id]}
             else:
                 return {"status": "no_pending_alerts", "phone": sender_phone}
+
+        elif text_upper == "TEST_ACK":
+            whatsapp_notifier.send_whatsapp_message(
+                sender_phone,
+                "🧪 *Handshake Verified*\n\nClinical terminal is online and receiving telemetry. You are connected to the Intelligent Care Pulse."
+            )
+            return {"status": "test_verified"}
 
         return {"status": "received", "action": "none"}
     except HTTPException:

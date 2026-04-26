@@ -352,9 +352,10 @@ def _format_escalation_message(
 # ── Send via GREEN-API ───────────────────────────────────────────────────────
 
 def send_whatsapp_message(phone: str, body: str, retries: int = 3,
-                          alert_id: int = None, event_type: str = "NEW") -> bool:
-    """Send a single WhatsApp message via GREEN-API (FREE) with retry + exponential backoff.
-    Uses idempotency key (alert_id + event_type + phone) to prevent duplicate sends.
+                          alert_id: int = None, event_type: str = "NEW",
+                          buttons: list = None) -> bool:
+    """Send a WhatsApp message via GREEN-API (FREE) with retry + exponential backoff.
+    Supports interactive buttons via the sendButtons endpoint.
     """
     import time
 
@@ -388,9 +389,23 @@ def send_whatsapp_message(phone: str, body: str, retries: int = 3,
         except Exception:
             pass
 
-    url = f"{GREEN_API_URL}/waInstance{GREEN_API_ID}/sendMessage/{GREEN_API_TOKEN}"
+    # Determine endpoint and payload based on buttons
     chat_id = _phone_to_chat_id(phone)
-    payload = {"chatId": chat_id, "message": body}
+    if buttons:
+        method = "sendButtons"
+        payload = {
+            "chatId": chat_id,
+            "message": body,
+            "buttons": buttons
+        }
+    else:
+        method = "sendMessage"
+        payload = {
+            "chatId": chat_id,
+            "message": body
+        }
+
+    url = f"{GREEN_API_URL}/waInstance{GREEN_API_ID}/{method}/{GREEN_API_TOKEN}"
 
     for attempt in range(1, retries + 1):
         try:
@@ -398,8 +413,8 @@ def send_whatsapp_message(phone: str, body: str, retries: int = 3,
 
             if response.status_code == 200:
                 data = response.json()
-                logger.info("✅ WhatsApp message sent to %s (id: %s, attempt: %d)",
-                            phone, data.get("idMessage", ""), attempt)
+                logger.info("✅ WhatsApp %s sent to %s (id: %s, attempt: %d)",
+                            method, phone, data.get("idMessage", ""), attempt)
 
                 # Track metrics
                 try:
@@ -510,9 +525,18 @@ def send_alert_notification(
         alert_id=alert_id,
     )
 
+    # v5.2: Add interactive Acknowledge button
+    buttons = []
+    if alert_id:
+        buttons.append({
+            "buttonId": f"ACK {alert_id}",
+            "buttonText": {"displayText": "✅ Acknowledge Alert"},
+            "type": 1
+        })
+
     results = {"enabled": True, "sent": 0, "failed": 0, "details": []}
     for phone in target:
-        ok = send_whatsapp_message(phone, message, alert_id=alert_id, event_type="NEW")
+        ok = send_whatsapp_message(phone, message, alert_id=alert_id, event_type="NEW", buttons=buttons)
         results["sent" if ok else "failed"] += 1
         results["details"].append({"to": phone, "success": ok})
 
@@ -575,9 +599,18 @@ def send_escalation_notification(
         room_number=room_number,
     )
 
+    # v5.2: Add interactive Acknowledge button
+    buttons = []
+    if alert_id:
+        buttons.append({
+            "buttonId": f"ACK {alert_id}",
+            "buttonText": {"displayText": "🚨 Resolve Escalation"},
+            "type": 1
+        })
+
     results = {"enabled": True, "sent": 0, "failed": 0, "details": []}
     for phone in target:
-        ok = send_whatsapp_message(phone, message, alert_id=alert_id, event_type="ESCALATION")
+        ok = send_whatsapp_message(phone, message, alert_id=alert_id, event_type="ESCALATION", buttons=buttons)
         results["sent" if ok else "failed"] += 1
         results["details"].append({"to": phone, "success": ok})
 
@@ -612,7 +645,16 @@ def send_test_message(phone: str = None) -> dict:
         "━━━━━━━━━━━━━━━━━━━━━━"
     )
 
-    ok = send_whatsapp_message(target_phone, body)
+    # v5.2: Add test button
+    buttons = [
+        {
+            "buttonId": "TEST_ACK",
+            "buttonText": {"displayText": "🧪 Verify Handshake"},
+            "type": 1
+        }
+    ]
+
+    ok = send_whatsapp_message(target_phone, body, buttons=buttons)
     return {"success": ok, "to": target_phone}
 
 
