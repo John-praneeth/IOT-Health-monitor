@@ -305,6 +305,7 @@ class AuditLogOut(ProjectBaseModel):
     action: str
     entity: str
     entity_id: Optional[int] = None
+    details: Optional[str] = None
     timestamp: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)

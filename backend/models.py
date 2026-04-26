@@ -166,6 +166,7 @@ class AuditLog(Base):
     action    = Column(String(100), nullable=False)
     entity    = Column(String(50), nullable=False)
     entity_id = Column(Integer, nullable=True)
+    details   = Column(String(1000), nullable=True)
     timestamp = Column(TIMESTAMP, server_default=func.now(), index=True)
 
     __table_args__ = (

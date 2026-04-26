@@ -55,13 +55,13 @@ export default function AuditLogs() {
           <table>
             <thead>
               <tr>
-                <th>ID</th><th>Action</th><th>Entity</th><th>Entity ID</th>
-                <th>User ID</th><th>Timestamp</th>
+                <th>ID</th><th>Action</th><th>Entity</th><th>Metadata</th><th>Details</th>
+                <th>Staff ID</th><th>Timestamp</th>
               </tr>
             </thead>
             <tbody>
               {logs.length === 0 && (
-                <tr><td colSpan={6} className="empty-state">No audit logs found.</td></tr>
+                <tr><td colSpan={7} className="empty-state">No audit logs found.</td></tr>
               )}
               {logs.map(l => (
                 <tr key={l.log_id}>
@@ -74,9 +74,14 @@ export default function AuditLogs() {
                     }`}>{l.action}</span>
                   </td>
                   <td>{l.entity}</td>
-                  <td>{l.entity_id || '—'}</td>
+                  <td>
+                     {l.entity_id ? <span className="badge badge-blue" style={{fontSize:10, background:'rgba(34,211,238,0.05)'}}>ID #{l.entity_id}</span> : '—'}
+                  </td>
+                  <td style={{ fontSize: 11, color: '#94a3b8', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.details}>
+                    {l.details || '—'}
+                  </td>
                   <td>{l.user_id || '—'}</td>
-                  <td>{l.timestamp ? toLocal(l.timestamp).toLocaleString() : '—'}</td>
+                  <td>{l.timestamp ? toLocal(l.timestamp).toLocaleTimeString() : '—'}</td>
                 </tr>
               ))}
             </tbody>

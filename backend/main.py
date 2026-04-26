@@ -1950,59 +1950,50 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
             return {"status": "acknowledged", "alert_ids": [target_alert_id]}
 
         elif text_upper in ("ACK", "1", "ACKNOWLEDGE", "OK", "YES"):
-            # Backward compatible: acknowledge all/latest pending alerts for this doctor
-            candidate_ids = whatsapp_notifier.acknowledge_by_phone(sender_phone)
-            acknowledged_ids: list[int] = []
+            # ── v5.2: Database-driven ACK (Resilient to server restart) ────
+            # 1. Find the doctor/nurse by sender phone
+            staff_user = db.query(models.User).filter(
+                (models.User.doctor_id.in_(
+                    db.query(models.Doctor.doctor_id).filter(models.Doctor.phone.like(f"%{sender_phone[-10:]}%"))
+                )) | (models.User.nurse_id.in_(
+                    db.query(models.Nurse.nurse_id).filter(models.Nurse.phone.like(f"%{sender_phone[-10:]}%"))
+                ))
+            ).first()
 
-            if candidate_ids:
-                for alert_id in candidate_ids:
-                    alert = db.query(models.Alert).filter(
-                        models.Alert.alert_id == alert_id
-                    ).first()
-                    if alert and alert.status in ("PENDING", "ESCALATED"):
-                        patient = db.query(models.Patient).filter(
-                            models.Patient.patient_id == alert.patient_id
-                        ).first()
-                        doctor = None
-                        doctor_user = None
-                        if patient and patient.assigned_doctor:
-                            doctor = db.query(models.Doctor).filter(
-                                models.Doctor.doctor_id == patient.assigned_doctor
-                            ).first()
-                            doctor_user = db.query(models.User).filter(
-                                models.User.doctor_id == patient.assigned_doctor
-                            ).first()
-                        if not doctor or not doctor.phone:
-                            continue
-                        clean_doc_phone = doctor.phone.strip().lstrip("+")
-                        clean_sender = sender_phone.strip().lstrip("+")
-                        if clean_doc_phone[-10:] != clean_sender[-10:]:
-                            continue
+            if not staff_user:
+                return {"status": "unrecognized_sender", "phone": sender_phone}
 
-                        alert.status = "ACKNOWLEDGED"
-                        alert.acknowledged_by = doctor_user.user_id if doctor_user else None
-                        alert.acknowledged_at = datetime.now(timezone.utc)
-                        db.commit()
-                        acknowledged_ids.append(alert_id)
-                        if doctor_user:
-                            crud.write_audit(db, "ACKNOWLEDGE", "alert", entity_id=alert_id, user_id=doctor_user.user_id)
-                        logger.info("Alert #%s marked ACKNOWLEDGED via WhatsApp by %s",
-                                    alert_id, sender_phone)
+            # 2. Find their most recent PENDING or ESCALATED alert
+            allowed_ids = _allowed_patient_ids_for_user(db, staff_user)
+            alert = db.query(models.Alert).filter(
+                models.Alert.patient_id.in_(list(allowed_ids or [-1])),
+                models.Alert.status.in_(["PENDING", "ESCALATED"])
+            ).order_by(models.Alert.created_at.desc()).first()
 
-            if acknowledged_ids:
-                doctor = db.query(models.Doctor).filter(
-                    models.Doctor.phone.like(f"%{sender_phone[-10:]}%")
-                ).first()
-                doctor_name = doctor.name if doctor else "Doctor"
+            if alert:
+                alert.status = "ACKNOWLEDGED"
+                alert.acknowledged_by = staff_user.user_id
+                alert.acknowledged_at = datetime.now(timezone.utc)
+                db.commit()
+                
+                crud.write_audit(db, "ACKNOWLEDGE", "alert", entity_id=alert.alert_id, user_id=staff_user.user_id, details="Via WhatsApp (Reply)")
+                whatsapp_notifier.acknowledge_alert_by_id(alert.alert_id, sender_phone)
+
+                staff_name = "Staff"
+                if staff_user.doctor_id:
+                    d = db.query(models.Doctor).filter(models.Doctor.doctor_id == staff_user.doctor_id).first()
+                    staff_name = d.name if d else "Doctor"
+                elif staff_user.nurse_id:
+                    n = db.query(models.Nurse).filter(models.Nurse.nurse_id == staff_user.nurse_id).first()
+                    staff_name = n.name if n else "Nurse"
 
                 whatsapp_notifier.send_whatsapp_message(
                     sender_phone,
-                    f"✅ Thank you, {doctor_name}!\n"
-                    f"Alert(s) #{', #'.join(map(str, acknowledged_ids))} "
-                    f"marked as ACKNOWLEDGED.\n"
-                    f"🕐 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                    f"✅ Thank you, {staff_name}!\n"
+                    f"Alert #{alert.alert_id} marked as ACKNOWLEDGED.\n"
+                    f"🕐 {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}"
                 )
-                return {"status": "acknowledged", "alert_ids": acknowledged_ids}
+                return {"status": "acknowledged", "alert_ids": [alert.alert_id]}
             else:
                 return {"status": "no_pending_alerts", "phone": sender_phone}
 

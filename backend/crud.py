@@ -31,10 +31,11 @@ def _active_source_name() -> str:
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
-def write_audit(db: Session, action: str, entity: str, entity_id: int = None, user_id: int = None):
+def write_audit(db: Session, action: str, entity: str, entity_id: int = None, user_id: int = None, details: str = None):
     log = models.AuditLog(
         user_id=user_id, action=action, entity=entity,
         entity_id=entity_id, timestamp=datetime.now(timezone.utc),
+        details=details
     )
     db.add(log)
     db.commit()
@@ -615,11 +616,21 @@ def update_patient(db: Session, patient_id: int, payload: schemas.PatientUpdate,
         assigned_doctor=payload.assigned_doctor,
         assigned_nurse=payload.assigned_nurse,
     )
-    for field, value in payload.model_dump().items():
-        setattr(patient, field, value)
+    
+    # ── Track changes for audit ──
+    changes = []
+    dump = payload.model_dump()
+    for field, new_val in dump.items():
+        old_val = getattr(patient, field)
+        if str(old_val) != str(new_val):
+            changes.append(f"{field}: {old_val} -> {new_val}")
+            setattr(patient, field, new_val)
+            
     db.commit()
     db.refresh(patient)
-    write_audit(db, "UPDATE", "patient", entity_id=patient_id, user_id=user_id)
+    
+    detail_str = "; ".join(changes) if changes else "No changes detected"
+    write_audit(db, "UPDATE", "patient", entity_id=patient_id, user_id=user_id, details=detail_str[:1000])
     return _enrich_patient(patient)
 
 
