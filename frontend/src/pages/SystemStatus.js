@@ -353,22 +353,30 @@ export default function SystemStatus() {
               <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 0, marginBottom: 10 }}>
                 Current state: <strong style={{ color: fakeVitalsStatus?.enabled ? '#4ade80' : '#f87171' }}>{fakeVitalsStatus?.enabled ? 'RUNNING' : 'STOPPED'}</strong>
               </p>
-              <div className="ops-actions">
-                <button
-                  onClick={handleForceStart}
-                  disabled={runtimeBusy}
-                  style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #166534', background: '#14532d', color: '#dcfce7', fontWeight: 600, cursor: runtimeBusy ? 'not-allowed' : 'pointer', opacity: runtimeBusy ? 0.6 : 1 }}
-                >
-                  ▶ Force Start
-                </button>
-                <button
-                  onClick={handleForceStop}
-                  disabled={runtimeBusy}
-                  style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #7f1d1d', background: '#7f1d1d', color: '#fee2e2', fontWeight: 600, cursor: runtimeBusy ? 'not-allowed' : 'pointer', opacity: runtimeBusy ? 0.6 : 1 }}
-                >
-                  ⏹ Force Stop
-                </button>
-              </div>
+              
+              {sourceConfig?.source === 'thingspeak' ? (
+                <div style={{ padding: '12px', background: 'rgba(34, 211, 238, 0.05)', border: '1px solid rgba(34, 211, 238, 0.2)', borderRadius: 8, color: '#22d3ee', fontSize: 12, lineHeight: 1.4 }}>
+                  <strong>Note:</strong> Fake Vitals controls are disabled because the system is currently receiving real telemetry from <strong>ThingSpeak</strong>.
+                </div>
+              ) : (
+                <div className="ops-actions">
+                  <button
+                    onClick={handleForceStart}
+                    disabled={runtimeBusy}
+                    style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #166534', background: '#14532d', color: '#dcfce7', fontWeight: 600, cursor: runtimeBusy ? 'not-allowed' : 'pointer', opacity: runtimeBusy ? 0.6 : 1 }}
+                  >
+                    ▶ Force Start
+                  </button>
+                  <button
+                    onClick={handleForceStop}
+                    disabled={runtimeBusy}
+                    style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #7f1d1d', background: '#7f1d1d', color: '#fee2e2', fontWeight: 600, cursor: runtimeBusy ? 'not-allowed' : 'pointer', opacity: runtimeBusy ? 0.6 : 1 }}
+                  >
+                    ⏹ Force Stop
+                  </button>
+                </div>
+              )}
+              
               <div style={{ marginTop: 10 }}>
                 {runtimeMessage && <span className={`ops-msg ${runtimeMessage.toLowerCase().includes('failed') ? 'ops-msg-error' : 'ops-msg-success'}`}>{runtimeMessage}</span>}
               </div>
