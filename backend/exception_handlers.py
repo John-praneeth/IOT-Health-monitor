@@ -10,6 +10,7 @@ import logging
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 from logger import log_security_event
 
@@ -77,6 +78,26 @@ def setup_exception_handlers(app: FastAPI):
                     "message": "Validation error",
                     "type": "ValidationError",
                     "details": safe_errors if not IS_PRODUCTION else "Invalid request data",
+                },
+            },
+        )
+
+    @app.exception_handler(SQLAlchemyError)
+    async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
+        logger.error(
+            "Database error: %s %s – %s",
+            request.method, request.url.path, str(exc),
+            exc_info=True,
+            extra={"action": "database_error"},
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": {
+                    "code": 503,
+                    "message": "A database error occurred. Please try again later.",
+                    "type": "DatabaseError",
                 },
             },
         )

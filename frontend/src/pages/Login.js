@@ -60,6 +60,10 @@ export default function Login({ onLogin }) {
   });
 
   useEffect(() => {
+    if (localStorage.getItem('session_expired')) {
+      setError('Your session has expired. Please sign in again.');
+      localStorage.removeItem('session_expired');
+    }
     getHospitals().then(r => setHospitals(r.data)).catch(err => console.error("Failed to load hospitals:", err));
   }, []);
 

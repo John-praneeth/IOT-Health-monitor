@@ -38,6 +38,7 @@ API.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (originalRequest.url === '/auth/refresh' || originalRequest.url === '/auth/login') {
         localStorage.clear();
+        localStorage.setItem('session_expired', 'true');
         if (window.location.pathname !== '/') {
           window.location.href = '/';
         }
@@ -73,6 +74,7 @@ API.interceptors.response.use(
       } catch (err) {
         processQueue(err, null);
         localStorage.clear();
+        localStorage.setItem('session_expired', 'true');
         if (window.location.pathname !== '/') {
           window.location.href = '/';
         }

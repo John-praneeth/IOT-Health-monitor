@@ -1612,7 +1612,7 @@ async def _redis_vitals_subscriber():
         r = None
         pubsub = None
         try:
-            r = aioredis.from_url(REDIS_URL, socket_connect_timeout=5)
+            r = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, health_check_interval=30)
             pubsub = r.pubsub()
             await pubsub.subscribe(WS_REDIS_CHANNEL)
             async for raw_message in pubsub.listen():
@@ -1621,6 +1621,9 @@ async def _redis_vitals_subscriber():
                     if isinstance(data, bytes):
                         data = data.decode("utf-8")
                     await manager.broadcast_vitals(data)
+            
+            logger.warning("Redis listen loop exited normally. Reconnecting...")
+            await asyncio.sleep(1)
         except asyncio.CancelledError:
             raise
         except Exception as e:
