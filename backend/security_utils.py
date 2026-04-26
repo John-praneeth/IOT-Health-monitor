@@ -243,10 +243,10 @@ def bind_refresh_session(
     _refresh_state[user_id] = {
         "jti": refresh_jti,
         "ip": ip_address,
-            "ua": ua,
-            "exp": expires_ts,
-            "access_jti": access_jti,
-        }
+        "ua": ua,
+        "exp": expires_ts,
+        "access_jti": access_jti,
+    }
     _refresh_user_by_jti[refresh_jti] = user_id
     _sessions[user_id] = [
         s for s in _sessions[user_id]

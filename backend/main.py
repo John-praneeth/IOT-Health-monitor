@@ -159,10 +159,22 @@ setup_rate_limiter(app)
 setup_exception_handlers(app)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
-origins = os.getenv(
-    "CORS_ORIGINS",
-    "http://localhost,http://localhost:3000,http://localhost:5173,https://iot-healthcare.vercel.app"
-).split(",")
+origins_env = os.getenv("CORS_ORIGINS", "")
+origins = [o.strip() for o in origins_env.split(",") if o.strip()]
+
+# Essential production & development origins
+mandatory_origins = [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://iot-healthcare.vercel.app",
+    "https://iot-healthcare-backend.onrender.com",
+]
+
+for mo in mandatory_origins:
+    if mo not in origins:
+        origins.append(mo)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
