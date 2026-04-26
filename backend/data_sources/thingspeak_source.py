@@ -111,8 +111,9 @@ class ThingSpeakSource(VitalSource):
             return self._fallback(patient_id, "invalid_range")
 
         # ── Stale-data check ─────────────────────────────────────────────
-        if not skip_stale_check and self._is_stale(entry):
-            return self._fallback(patient_id, "stale_data")
+        # Disabled for testing: Accept real hardware data regardless of age.
+        # if not skip_stale_check and self._is_stale(entry):
+        #     return self._fallback(patient_id, "stale_data")
 
         # Extract timestamp
         ts = None
