@@ -159,7 +159,10 @@ setup_rate_limiter(app)
 setup_exception_handlers(app)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
-origins = os.getenv("CORS_ORIGINS", "http://localhost,http://localhost:3000,http://localhost:5173").split(",")
+origins = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost,http://localhost:3000,http://localhost:5173,https://iot-healthcare.vercel.app"
+).split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

@@ -1,4 +1,10 @@
-const rawApiBase = (process.env.REACT_APP_API_BASE_URL || '').trim();
+const getRuntimeApiBase = () => {
+  if (typeof window === 'undefined') return '';
+  const params = new URLSearchParams(window.location.search);
+  return params.get('api') || '';
+};
+
+const rawApiBase = (getRuntimeApiBase() || process.env.REACT_APP_API_BASE_URL || '').trim();
 const rawWsBase = (process.env.REACT_APP_WS_BASE_URL || '').trim();
 
 const isVercelProdHost =

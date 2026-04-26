@@ -64,10 +64,11 @@ export default function Login({ onLogin }) {
 
   const humanizeApiError = (err, fallback) => {
     if (err?.code === 'ECONNABORTED') {
-      return 'Request timed out. Please try again in a few seconds.';
+      return 'Clinical terminal timed out. Please verify your connection to the hospital intranet.';
     }
     if (!err?.response) {
-      return 'Network error. Check your connection and try again.';
+      const target = API_BASE_URL.includes('localhost') ? 'your local development server' : `the medical gateway at ${API_BASE_URL}`;
+      return `Network Connectivity Failure: Unable to reach ${target}. Ensure the backend service is deployed and active.`;
     }
     return err.response?.data?.detail || fallback;
   };
@@ -231,12 +232,24 @@ export default function Login({ onLogin }) {
         </div>
 
         {error && (
-          <div style={{
-            background: 'rgba(244, 63, 94, 0.15)', color: '#fda4af', borderRadius: 14,
-            border: '1px solid rgba(244, 63, 94, 0.3)',
-            padding: '12px 16px', fontSize: 13, marginBottom: 20, fontWeight: 600,
-            animation: 'shake 0.4s ease-in-out'
-          }}>⚠️ {error}</div>
+          <>
+            <div style={{
+              background: 'rgba(244, 63, 94, 0.15)', color: '#fda4af', borderRadius: 14,
+              border: '1px solid rgba(244, 63, 94, 0.3)',
+              padding: '12px 16px', fontSize: 13, marginBottom: 20, fontWeight: 600,
+              animation: 'shake 0.4s ease-in-out'
+            }}>⚠️ {error}</div>
+            
+            {error.includes('Connectivity Failure') && (
+              <div style={{
+                background: 'rgba(34, 211, 238, 0.05)', color: '#22d3ee', borderRadius: 12,
+                border: '1px solid rgba(34, 211, 238, 0.2)',
+                padding: '10px 14px', fontSize: 11, marginBottom: 20, lineHeight: 1.4
+              }}>
+                <strong>Diagnostic Tip:</strong> If your medical gateway is deployed at a different address, you can override it by adding <code>?api=YOUR_API_URL</code> to the address bar.
+              </div>
+            )}
+          </>
         )}
 
         {resetMsg && (
