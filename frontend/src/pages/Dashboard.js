@@ -96,7 +96,12 @@ export default function Dashboard() {
 
   const getStatus = (pId) => {
     const v = liveVitals[pId];
-    if (!v) return 'no-data';
+    if (!v) return 'new-admission';
+    
+    // Signal Loss Detection (5 minute threshold)
+    const ts = toLocal(v.timestamp);
+    if (ts && (new Date() - ts > 5 * 60 * 1000)) return 'signal-loss';
+
     if (v.spo2 < 90 || v.heart_rate > 110 || v.heart_rate < 50) return 'critical';
     if (v.temperature > 101 || v.temperature < 96) return 'warning';
     return 'normal';
@@ -106,13 +111,14 @@ export default function Dashboard() {
     const s = getStatus(p.patient_id);
     acc[s] = (acc[s] || 0) + 1;
     return acc;
-  }, { critical: 0, warning: 0, normal: 0, 'no-data': 0 });
+  }, { critical: 0, warning: 0, normal: 0, 'new-admission': 0, 'signal-loss': 0 });
 
   const barSeries = [
-    { key: 'critical', label: 'Critical', value: counts.critical, color: '#f43f5e' },
-    { key: 'warning', label: 'Warning', value: counts.warning, color: '#fbbf24' },
-    { key: 'normal', label: 'Stable', value: counts.normal, color: '#34d399' },
-    { key: 'no-data', label: 'No Data', value: counts['no-data'], color: '#22d3ee' },
+    { key: 'critical',        label: 'Critical',      value: counts.critical,        color: '#f43f5e' },
+    { key: 'signal-loss',     label: 'Signal Loss',   value: counts['signal-loss'],  color: '#fbbf24' },
+    { key: 'warning',         label: 'Stable (Obs)',  value: counts.warning,         color: '#fcd34d' },
+    { key: 'normal',          label: 'Healthy',       value: counts.normal,          color: '#34d399' },
+    { key: 'new-admission',   label: 'Incoming',      value: counts['new-admission'],color: '#22d3ee' },
   ];
 
   const totalA = Math.max(1, alerts.length);
@@ -280,8 +286,15 @@ export default function Dashboard() {
                       <td style={{color: s === 'critical' && v?.spo2 < 90 ? '#f43f5e' : 'inherit'}}>{v ? `${v.spo2}%` : '—'}</td>
                       <td>{v ? `${v.temperature}°F` : '—'}</td>
                       <td>
-                        <span className={`badge ${s==='critical'?'badge-red':s==='warning'?'badge-amber':'badge-green'}`}>
-                          {s.toUpperCase()}
+                        <span className={`badge ${
+                          s === 'critical' ? 'badge-red' : 
+                          s === 'signal-loss' ? 'badge-amber' : 
+                          s === 'new-admission' ? 'badge-blue' : 
+                          s === 'warning' ? 'badge-amber' : 'badge-green'
+                        }`}>
+                          {s === 'signal-loss' ? 'SIGNAL LOSS' : 
+                           s === 'new-admission' ? 'NEW ADMIT' : 
+                           s.toUpperCase()}
                         </span>
                       </td>
                     </tr>

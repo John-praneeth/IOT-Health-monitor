@@ -136,7 +136,7 @@ class AlertEscalation(Base):
 
     escalation_id       = Column(Integer, primary_key=True, index=True)
     alert_id            = Column(Integer, ForeignKey("alerts.alert_id"), nullable=False, index=True)
-    escalated_to_doctor = Column(Integer, ForeignKey("doctors.doctor_id"), nullable=False, index=True)
+    escalated_to_doctor = Column(Integer, ForeignKey("doctors.doctor_id"), nullable=True, index=True)
     escalated_at        = Column(TIMESTAMP, server_default=func.now())
 
     alert  = relationship("Alert",  back_populates="escalations")

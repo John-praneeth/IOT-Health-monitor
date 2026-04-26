@@ -321,6 +321,7 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
         .all()
     )
     escalated = []
+    objects_to_save = []
     for alert in stale:
         alert.status = "ESCALATED"
         escalated.append(alert)
@@ -368,32 +369,29 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
 
         # Create escalation records for each same-spec doctor
         for doc in same_spec_doctors:
-            esc = models.AlertEscalation(
+            objects_to_save.append(models.AlertEscalation(
                 alert_id=alert.alert_id,
                 escalated_to_doctor=doc.doctor_id,
                 escalated_at=datetime.now(timezone.utc),
-            )
-            db.add(esc)
+            ))
 
             # Notify the doctor (via user account)
             doc_user = db.query(models.User).filter(models.User.doctor_id == doc.doctor_id).first()
             if doc_user:
-                notif = models.AlertNotification(
+                objects_to_save.append(models.AlertNotification(
                     alert_id=alert.alert_id,
                     user_id=doc_user.user_id,
-                    message=f"🔺 ESCALATED: {alert.alert_type} for patient {patient.name} (Room {patient.room_number}). Original doctor did not respond.",
+                    message=f"🔺 ESCALATED: {alert.alert_type} for patient {patient.name} (Room {patient.room_number}).",
                     created_at=datetime.now(timezone.utc),
-                )
-                db.add(notif)
+                ))
 
         # Also create escalation for the assigned doctor
         if assigned_doctor:
-            esc = models.AlertEscalation(
+            objects_to_save.append(models.AlertEscalation(
                 alert_id=alert.alert_id,
                 escalated_to_doctor=assigned_doctor.doctor_id,
                 escalated_at=datetime.now(timezone.utc),
-            )
-            db.add(esc)
+            ))
 
         # Notify nurses at the patient's hospital
         if patient.hospital_id:
@@ -405,13 +403,12 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
             for nurse in hospital_nurses:
                 nurse_user = db.query(models.User).filter(models.User.nurse_id == nurse.nurse_id).first()
                 if nurse_user:
-                    notif = models.AlertNotification(
+                    objects_to_save.append(models.AlertNotification(
                         alert_id=alert.alert_id,
                         user_id=nurse_user.user_id,
                         message=f"🔺 ESCALATED: {alert.alert_type} for patient {patient.name} (Room {patient.room_number}). Please check immediately.",
                         created_at=datetime.now(timezone.utc),
-                    )
-                    db.add(notif)
+                    ))
 
         # Send WhatsApp escalation notification to escalated doctors + assigned staff
         try:
@@ -441,6 +438,9 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
                 )
         except Exception as e:
             logger.error("WhatsApp escalation notification failed for alert %s: %s", alert.alert_id, e)
+
+    if objects_to_save:
+        db.add_all(objects_to_save)
 
     if escalated:
         db.commit()
@@ -505,12 +505,15 @@ def get_patients(
     patient_ids: list[int] | None = None,
     limit: int = 200,
     offset: int = 0,
+    include_inactive: bool = False,
 ):
     q = db.query(models.Patient).options(
         joinedload(models.Patient.doctor),
         joinedload(models.Patient.nurse),
         joinedload(models.Patient.hospital)
     )
+    if not include_inactive:
+        q = q.filter(models.Patient.is_active == True)
     if doctor_id:
         q = q.filter(models.Patient.assigned_doctor == doctor_id)
     if nurse_id:
@@ -764,19 +767,18 @@ def delete_doctor(db: Session, doctor_id: int, user_id: int):
     if doctor:
         # 1. Nullify FK on linked patient records
         db.query(models.Patient).filter(models.Patient.assigned_doctor == doctor_id).update({"assigned_doctor": None})
-        
-        # 2. Delete alert escalations assigned to this doctor
-        db.query(models.AlertEscalation).filter(models.AlertEscalation.escalated_to_doctor == doctor_id).delete()
-        
-        # 3. Nullify FK on linked user accounts
-        db.query(models.User).filter(models.User.doctor_id == doctor_id).update({"doctor_id": None})
-        
-        # 4. Delete doctor first; audit only after successful commit.
+
+        # 2. Nullify FK on alert escalations (preserve clinical history)
+        db.query(models.AlertEscalation).filter(models.AlertEscalation.escalated_to_doctor == doctor_id).update({"escalated_to_doctor": None})
+
+        # 3. Physically remove associated login account
+        db.query(models.User).filter(models.User.doctor_id == doctor_id).delete()
+
+        # 4. Delete doctor profile; audit only after successful commit.
         db.delete(doctor)
         db.commit()
         write_audit(db, "DELETE", "doctor", entity_id=doctor_id, user_id=user_id)
     return doctor
-
 
 # ── Nurses ────────────────────────────────────────────────────────────────────
 def _enrich_nurse(nurse):
@@ -832,9 +834,9 @@ def delete_nurse(db: Session, nurse_id: int, user_id: int):
     if nurse:
         # Nullify FK on linked patient records
         db.query(models.Patient).filter(models.Patient.assigned_nurse == nurse_id).update({"assigned_nurse": None})
-        # Nullify FK on linked user accounts before deleting
-        db.query(models.User).filter(models.User.nurse_id == nurse_id).update({"nurse_id": None})
-        # Delete nurse first; audit only after successful commit.
+        # Physically remove associated login account
+        db.query(models.User).filter(models.User.nurse_id == nurse_id).delete()
+        # Delete nurse profile; audit only after successful commit.
         db.delete(nurse)
         db.commit()
         write_audit(db, "DELETE", "nurse", entity_id=nurse_id, user_id=user_id)
