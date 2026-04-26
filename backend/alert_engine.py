@@ -21,6 +21,8 @@ MIN_CONSECUTIVE_READINGS = 2
 # In-memory buffer to track consecutive abnormal states per patient per type.
 # Format: { (patient_id, alert_type): count }
 _consecutive_abnormal_counts: dict[tuple[int, str], int] = {}
+# Counter to trigger periodic cleanup of the memory buffer
+_cleanup_tick = 0
 
 
 def check_alerts(vital, db=None) -> list[str]:
@@ -34,6 +36,7 @@ def check_alerts(vital, db=None) -> list[str]:
     -------
     list[str]  –  names of triggered alert types (empty list = all normal).
     """
+    global _cleanup_tick
     raw_triggered = []
     
     # ── 1. Check raw thresholds ──
@@ -45,7 +48,6 @@ def check_alerts(vital, db=None) -> list[str]:
             pass
 
     # ── 2. Update consecutive counters and filter by sensitivity ──
-    # We only promote a raw trigger to a 'Formal Alert' if it persists.
     formal_triggered = []
     patient_id = getattr(vital, "patient_id", None)
     
@@ -57,8 +59,16 @@ def check_alerts(vital, db=None) -> list[str]:
                 if _consecutive_abnormal_counts[key] >= MIN_CONSECUTIVE_READINGS:
                     formal_triggered.append(alert_type)
             else:
-                # Signal stabilized: reset the counter for this patient/type
                 _consecutive_abnormal_counts.pop(key, None)
+
+    # Periodic cleanup of stagnant counters (every 500 checks)
+    _cleanup_tick += 1
+    if _cleanup_tick > 500:
+        _cleanup_tick = 0
+        # If the buffer is large, prune it (already mostly handled by pop above, 
+        # but this catches orphaned entries if logic changes)
+        if len(_consecutive_abnormal_counts) > 1000:
+            _consecutive_abnormal_counts.clear()
 
     if not formal_triggered or db is None:
         return formal_triggered

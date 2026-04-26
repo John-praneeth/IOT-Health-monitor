@@ -85,29 +85,33 @@ def run():
             active_source = data_sources.get_source()
             vitals_snapshot = []
             for p in patients:
-                # One-time backfill if DB is empty for this source
-                fake_generator.backfill_history(db, p.patient_id, source=active_source)
-                
-                vital, alerts = fake_generator.save_fake(db, p.patient_id, source=active_source)
-                alert_str = ", ".join(alerts) if alerts else "—"
-                logging.info(
-                    "Patient %-3s | HR=%3d  SpO2=%3d%%  Temp=%.1f°F | Alerts: %s",
-                    p.patient_id,
-                    vital.heart_rate,
-                    vital.spo2,
-                    vital.temperature,
-                    alert_str,
-                )
-                vitals_snapshot.append({
-                    "patient_id": p.patient_id,
-                    "name": p.name,
-                    "room": p.room_number,
-                    "heart_rate": vital.heart_rate,
-                    "spo2": vital.spo2,
-                    "temperature": vital.temperature,
-                    "timestamp": str(vital.timestamp),
-                    "alerts": alerts,
-                })
+                try:
+                    # One-time backfill if DB is empty for this source
+                    fake_generator.backfill_history(db, p.patient_id, source=active_source)
+                    
+                    vital, alerts = fake_generator.save_fake(db, p.patient_id, source=active_source)
+                    alert_str = ", ".join(alerts) if alerts else "—"
+                    logging.info(
+                        "Patient %-3s | HR=%3d  SpO2=%3d%%  Temp=%.1f°F | Alerts: %s",
+                        p.patient_id,
+                        vital.heart_rate,
+                        vital.spo2,
+                        vital.temperature,
+                        alert_str,
+                    )
+                    vitals_snapshot.append({
+                        "patient_id": p.patient_id,
+                        "name": p.name,
+                        "room": p.room_number,
+                        "heart_rate": vital.heart_rate,
+                        "spo2": vital.spo2,
+                        "temperature": vital.temperature,
+                        "timestamp": str(vital.timestamp),
+                        "alerts": alerts,
+                    })
+                except Exception as e:
+                    logging.warning("Skipping patient %d due to processing error (likely deleted): %s", p.patient_id, e)
+                    db.rollback() # Ensure session remains clean for next patient
 
             # ── Publish to Redis for WebSocket live push ─────────────────
             if vitals_snapshot:

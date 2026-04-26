@@ -51,6 +51,13 @@ export default function Vitals() {
     return () => clearInterval(id);
   }, [load]);
 
+  const filterRef = React.useRef(filter);
+  const docFilterRef = React.useRef(doctorFilter);
+  const patientsRef = React.useRef(patients);
+  useEffect(() => { filterRef.current = filter; }, [filter]);
+  useEffect(() => { docFilterRef.current = doctorFilter; }, [doctorFilter]);
+  useEffect(() => { patientsRef.current = patients; }, [patients]);
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -68,18 +75,22 @@ export default function Vitals() {
           const parsed = JSON.parse(event.data);
           if (!Array.isArray(parsed) || parsed.length === 0) return;
 
+          const currentFilter = filterRef.current;
+          const currentDocFilter = docFilterRef.current;
+          const currentPatients = patientsRef.current;
+
           // Create a quick lookup for doctor filtering
           const patientDocMap = {};
-          if (doctorFilter) {
-            patients.forEach(p => patientDocMap[p.patient_id] = p.assigned_doctor);
+          if (currentDocFilter) {
+            currentPatients.forEach(p => patientDocMap[p.patient_id] = p.assigned_doctor);
           }
 
           const incoming = parsed
             .filter(v => v?.patient_id != null)
-            .filter(v => !filter || String(v.patient_id) === String(filter))
+            .filter(v => !currentFilter || String(v.patient_id) === String(currentFilter))
             .filter(v => {
-              if (!doctorFilter) return true;
-              return String(patientDocMap[v.patient_id]) === String(doctorFilter);
+              if (!currentDocFilter) return true;
+              return String(patientDocMap[v.patient_id]) === String(currentDocFilter);
             })
             .map(v => ({
               ...v,

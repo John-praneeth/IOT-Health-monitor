@@ -65,6 +65,9 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, [fetchAll]);
 
+  const patientsRef = React.useRef(patients);
+  useEffect(() => { patientsRef.current = patients; }, [patients]);
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -82,7 +85,7 @@ export default function Dashboard() {
           const next = {};
           parsed.forEach((v) => { if (v?.patient_id != null) next[v.patient_id] = v; });
           if (Object.keys(next).length > 0) {
-            setLiveVitals(next);
+            setLiveVitals(prev => ({ ...prev, ...next }));
             setLastRefresh(new Date().toLocaleTimeString());
           }
         } catch {}
@@ -92,7 +95,7 @@ export default function Dashboard() {
     };
     connect();
     return () => { isMounted = false; clearTimeout(reconnectTimer); if (ws) ws.close(); };
-  }, []);
+  }, [role]); // Only restart if role/session fundamentally changes
 
   const getStatus = (pId) => {
     const v = liveVitals[pId];
