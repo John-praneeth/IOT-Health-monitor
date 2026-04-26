@@ -62,20 +62,23 @@ def run():
     while True:
         db = SessionLocal()
         try:
-            setting = db.query(models.AppSetting).filter(models.AppSetting.setting_key == FAKE_VITALS_ENABLED_SETTING_KEY).first()
-            enabled = True if not setting else str(setting.setting_value or "").strip().lower() in {"1", "true", "yes", "on"}
-            if enabled != last_enabled:
-                logging.info("Fake vitals generation is now %s", "ENABLED" if enabled else "DISABLED")
-                last_enabled = enabled
-            if not enabled:
-                # Avoid a tight loop when generation is disabled.
-                time.sleep(INTERVAL_SECONDS)
-                continue
-
             current_source = data_sources.get_data_source_config()["source"]
             if current_source != last_source:
                 logging.info("Vitals source switched to: %s", current_source)
                 last_source = current_source
+
+            setting = db.query(models.AppSetting).filter(models.AppSetting.setting_key == FAKE_VITALS_ENABLED_SETTING_KEY).first()
+            fake_enabled = True if not setting else str(setting.setting_value or "").strip().lower() in {"1", "true", "yes", "on"}
+            
+            if fake_enabled != last_enabled:
+                logging.info("Fake vitals generation is now %s", "ENABLED" if fake_enabled else "DISABLED")
+                last_enabled = fake_enabled
+
+            # Only pause the loop if we are in fake mode AND fake mode is disabled.
+            # If we are in thingspeak mode, we MUST keep polling hardware.
+            if current_source == "fake" and not fake_enabled:
+                time.sleep(INTERVAL_SECONDS)
+                continue
 
             patients = db.query(models.Patient).all()
             if not patients:
