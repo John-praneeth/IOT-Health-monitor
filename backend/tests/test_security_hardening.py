@@ -12,7 +12,7 @@ def _login_headers(client, username: str, password: str):
 
 
 def _admin_headers(client):
-    return _login_headers(client, "admin", "admin123")
+    return _login_headers(client, "admin", "Admin123!")
 
 
 def _create_doctor_user(client, admin_headers, username: str, phone: str):
@@ -24,13 +24,13 @@ def _create_doctor_user(client, admin_headers, username: str, phone: str):
             "phone": phone,
             "email": f"{username}@example.com",
             "username": username,
-            "password": "password123",
+            "password": "Password123!",
         },
         headers=admin_headers,
     )
     assert resp.status_code == 200
     doctor_id = resp.json()["doctor_id"]
-    headers = _login_headers(client, username, "password123")
+    headers = _login_headers(client, username, "Password123!")
     me = client.get("/auth/me", headers=headers)
     assert me.status_code == 200
     return {"doctor_id": doctor_id, "headers": headers, "user_id": me.json()["user_id"]}
@@ -45,13 +45,13 @@ def _create_nurse_user(client, admin_headers, username: str, phone: str):
             "phone": phone,
             "email": f"{username}@example.com",
             "username": username,
-            "password": "password123",
+            "password": "Password123!",
         },
         headers=admin_headers,
     )
     assert resp.status_code == 200
     nurse_id = resp.json()["nurse_id"]
-    headers = _login_headers(client, username, "password123")
+    headers = _login_headers(client, username, "Password123!")
     return {"nurse_id": nurse_id, "headers": headers}
 
 

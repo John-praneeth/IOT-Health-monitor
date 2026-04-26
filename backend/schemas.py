@@ -1,10 +1,18 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import Optional, List
 from datetime import datetime
 
 
 class ProjectBaseModel(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
+
+
+def validate_password_complexity(v: str) -> str:
+    if not any(c.isupper() for c in v):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not any(c.isdigit() for c in v):
+        raise ValueError("Password must contain at least one numerical digit")
+    return v
 
 
 # ── Vitals ──────────────────────────────────────────────────────────────────
@@ -128,13 +136,18 @@ class DoctorOut(DoctorBase):
 class DoctorSelfRegister(ProjectBaseModel):
     """Used by POST /auth/register/doctor — creates Doctor + User in one step."""
     username: str = Field(..., min_length=3, max_length=100)
-    password: str = Field(..., min_length=6, max_length=200)
+    password: str = Field(..., min_length=8, max_length=200)
     name: str = Field(..., min_length=1, max_length=100)
     specialization: str = Field(..., min_length=1, max_length=100)
     hospital_id: Optional[int] = None
     phone: Optional[str] = Field(None, max_length=20)
     email: Optional[str] = Field(None, max_length=100)
     is_freelancer: bool = True
+
+    @field_validator("password")
+    @classmethod
+    def password_complexity(cls, v):
+        return validate_password_complexity(v)
 
 
 # ── Nurses ────────────────────────────────────────────────────────────────────
@@ -169,12 +182,17 @@ class NurseOut(NurseBase):
 class NurseSelfRegister(ProjectBaseModel):
     """Used by POST /auth/register/nurse — creates Nurse + User in one step."""
     username: str = Field(..., min_length=3, max_length=100)
-    password: str = Field(..., min_length=6, max_length=200)
+    password: str = Field(..., min_length=8, max_length=200)
     name: str = Field(..., min_length=1, max_length=100)
     department: Optional[str] = Field(None, max_length=100)
     hospital_id: Optional[int] = None
     phone: Optional[str] = Field(None, max_length=20)
     email: Optional[str] = Field(None, max_length=100)
+
+    @field_validator("password")
+    @classmethod
+    def password_complexity(cls, v):
+        return validate_password_complexity(v)
 
 
 # ── Assignment ────────────────────────────────────────────────────────────────
@@ -198,10 +216,15 @@ class AlertAcknowledge(ProjectBaseModel):
 class RegisterRequest(ProjectBaseModel):
     """Staff registration (ADMIN creates other staff users)."""
     username: str = Field(..., min_length=3, max_length=100)
-    password: str = Field(..., min_length=6, max_length=200)
+    password: str = Field(..., min_length=8, max_length=200)
     role: str = Field(..., pattern=r"^(ADMIN|DOCTOR|NURSE)$")
     doctor_id: Optional[int] = None
     nurse_id: Optional[int] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_complexity(cls, v):
+        return validate_password_complexity(v)
 
 
 class LoginRequest(ProjectBaseModel):
@@ -211,7 +234,12 @@ class LoginRequest(ProjectBaseModel):
 
 class ResetPasswordRequest(ProjectBaseModel):
     username: str = Field(..., min_length=1, max_length=100)
-    new_password: str = Field(..., min_length=6, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=200)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_complexity(cls, v):
+        return validate_password_complexity(v)
 
 
 class ForgotPasswordStartRequest(ProjectBaseModel):
@@ -221,7 +249,12 @@ class ForgotPasswordStartRequest(ProjectBaseModel):
 class ForgotPasswordConfirmRequest(ProjectBaseModel):
     username: str = Field(..., min_length=1, max_length=100)
     verification_code: str = Field(..., min_length=4, max_length=20)
-    new_password: str = Field(..., min_length=6, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=200)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_complexity(cls, v):
+        return validate_password_complexity(v)
 
 
 class TokenResponse(ProjectBaseModel):

@@ -25,11 +25,8 @@ export default function Vitals() {
 
   const load = useCallback(async () => {
     try {
-      const params = { limit: 100 };
-      if (filter)       params.patient_id = parseInt(filter);
-      if (doctorFilter) params.doctor_id  = parseInt(doctorFilter);
       const results = await Promise.allSettled([
-        getVitals(params),
+        getVitals({ limit: filter ? 200 : 100, patient_id: filter || undefined, doctor_id: doctorFilter || undefined }),
         getPatients(),
         getDoctors(),
       ]);
@@ -189,9 +186,27 @@ export default function Vitals() {
       },
     },
     scales: {
-      x: { ticks: { color: '#64748b', maxTicksLimit: 15 }, grid: { color: 'rgba(255,255,255,0.03)' } },
-      y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.03)' } },
+      x: { 
+        ticks: { color: '#64748b', maxTicksLimit: 15 }, 
+        grid: { color: 'rgba(255,255,255,0.03)' } 
+      },
+      y: { 
+        ticks: { color: '#64748b' }, 
+        grid: { color: 'rgba(255,255,255,0.03)' },
+        suggestedMin: 40,
+        suggestedMax: 120
+      },
     },
+    plugins: {
+      autocolors: false,
+      legend: { labels: { color: '#94a3b8', font: { weight: '600' } } },
+      title: {
+        display: true,
+        text: filter ? `Clinical Telemetry: ${patientName(parseInt(filter))}` : 'Registry Telemetry Stream',
+        color: '#f1f5f9',
+        font: { size: 16, weight: '700', family: "'Space Grotesk', sans-serif" }
+      },
+    }
   };
 
   return (

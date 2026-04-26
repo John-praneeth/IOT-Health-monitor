@@ -46,7 +46,7 @@ def setup_db():
     try:
         admin = User(
             username="admin",
-            password_hash=auth.hash_password("admin123"),
+            password_hash=auth.hash_password("Admin123!"),
             role="ADMIN",
         )
         session.add(admin)

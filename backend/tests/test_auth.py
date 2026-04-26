@@ -6,7 +6,7 @@ import pytest
 
 
 def _admin_headers(client):
-    resp = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+    resp = client.post("/auth/login", json={"username": "admin", "password": "Admin123!"})
     assert resp.status_code == 200
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
@@ -16,7 +16,7 @@ def test_register_and_login(client):
     # Register (non-admin role, since ADMIN registration is blocked)
     resp = client.post("/auth/register", json={
         "username": "testdoctor",
-        "password": "secret123",
+        "password": "Secret123!",
         "role": "DOCTOR",
     }, headers=_admin_headers(client))
     assert resp.status_code == 200
@@ -27,7 +27,7 @@ def test_register_and_login(client):
     # Login
     resp = client.post("/auth/login", json={
         "username": "testdoctor",
-        "password": "secret123",
+        "password": "Secret123!",
     })
     assert resp.status_code == 200
     token_data = resp.json()
@@ -45,7 +45,7 @@ def test_admin_registration_blocked(client):
     """ADMIN role cannot be created via /auth/register."""
     resp = client.post("/auth/register", json={
         "username": "sneaky_admin",
-        "password": "secret123",
+        "password": "Secret123!",
         "role": "ADMIN",
     }, headers=_admin_headers(client))
     assert resp.status_code == 403
@@ -54,12 +54,12 @@ def test_admin_registration_blocked(client):
 def test_duplicate_username(client):
     client.post("/auth/register", json={
         "username": "dup_user",
-        "password": "pass1234",
+        "password": "Pass1234!",
         "role": "NURSE",
     }, headers=_admin_headers(client))
     resp = client.post("/auth/register", json={
         "username": "dup_user",
-        "password": "pass5678",
+        "password": "Pass5678!",
         "role": "NURSE",
     }, headers=_admin_headers(client))
     assert resp.status_code == 400
@@ -83,7 +83,7 @@ def test_forgot_password_two_step_flow(client):
         "/auth/register",
         json={
             "username": "reset_user",
-            "password": "oldpass123",
+            "password": "Oldpass123!",
             "role": "DOCTOR",
         },
         headers=_admin_headers(client),
@@ -100,13 +100,13 @@ def test_forgot_password_two_step_flow(client):
         json={
             "username": "reset_user",
             "verification_code": code,
-            "new_password": "newpass123",
+            "new_password": "Newpass123!",
         },
     )
     assert confirm.status_code == 200
 
-    old_login = client.post("/auth/login", json={"username": "reset_user", "password": "oldpass123"})
+    old_login = client.post("/auth/login", json={"username": "reset_user", "password": "Oldpass123!"})
     assert old_login.status_code == 401
 
-    new_login = client.post("/auth/login", json={"username": "reset_user", "password": "newpass123"})
+    new_login = client.post("/auth/login", json={"username": "reset_user", "password": "Newpass123!"})
     assert new_login.status_code == 200

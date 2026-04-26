@@ -54,6 +54,13 @@ def setup_exception_handlers(app: FastAPI):
             safe_err = err.copy()
             safe_err.pop('input', None)
             safe_err.pop('url', None)
+            
+            # Fix: Ensure 'ctx' contains only serializable data (convert ValueError etc to string)
+            if 'ctx' in safe_err and isinstance(safe_err['ctx'], dict):
+                for k, v in safe_err['ctx'].items():
+                    if isinstance(v, Exception):
+                        safe_err['ctx'][k] = str(v)
+            
             safe_errors.append(safe_err)
             
         logger.warning(

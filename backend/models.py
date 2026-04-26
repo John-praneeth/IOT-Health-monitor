@@ -168,6 +168,11 @@ class AuditLog(Base):
     entity_id = Column(Integer, nullable=True)
     timestamp = Column(TIMESTAMP, server_default=func.now(), index=True)
 
+    __table_args__ = (
+        Index("idx_audit_entity_id", "entity", "entity_id"),
+        Index("idx_audit_timestamp_desc", timestamp.desc()),
+    )
+
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"

@@ -7,7 +7,7 @@ import models
 
 
 def _admin_headers(client):
-    resp = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+    resp = client.post("/auth/login", json={"username": "admin", "password": "Admin123!"})
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
@@ -122,7 +122,7 @@ def test_fresh_reset_clears_domain_and_preserves_admin(client, db):
 
     staff_user = models.User(
         username="temp_staff",
-        password_hash=auth.hash_password("password123"),
+        password_hash=auth.hash_password("Password123!"),
         role="DOCTOR",
         doctor_id=doctor.doctor_id,
     )

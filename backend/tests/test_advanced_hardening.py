@@ -1,7 +1,7 @@
 import auth
 
 
-def _login(client, username="admin", password="admin123", *, ip=None, ua=None):
+def _login(client, username="admin", password="Admin123!", *, ip=None, ua=None):
     headers = {}
     if ip:
         headers["X-Forwarded-For"] = ip
@@ -23,7 +23,7 @@ def _create_doctor(client, headers, username, hospital_id=None):
         "phone": "919900001111",
         "email": f"{username}@example.com",
         "username": username,
-        "password": "password123",
+        "password": "Password123!",
     }
     if hospital_id is not None:
         payload["hospital_id"] = hospital_id
@@ -116,13 +116,13 @@ def test_abac_hospital_access_control(client):
     assert patient.status_code == 200
     patient_id = patient.json()["patient_id"]
 
-    same_login = _login(client, "doc_same_hospital", "password123")
+    same_login = _login(client, "doc_same_hospital", "Password123!")
     assert same_login.status_code == 200
     same_headers = {"Authorization": f"Bearer {same_login.json()['access_token']}"}
     allowed = client.get(f"/patients/{patient_id}", headers=same_headers)
     assert allowed.status_code == 200
 
-    other_login = _login(client, "doc_other_hospital", "password123")
+    other_login = _login(client, "doc_other_hospital", "Password123!")
     assert other_login.status_code == 200
     other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
     denied = client.get(f"/patients/{patient_id}", headers=other_headers)
