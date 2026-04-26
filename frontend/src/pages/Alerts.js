@@ -50,10 +50,30 @@ export default function Alerts() {
   }, [load, role]);
 
   const handleAck = async (alertId) => {
+    const originalAlerts = [...alerts];
+    const originalStats = alertStats ? { ...alertStats } : null;
+
+    // Optimistic Update
+    setAlerts(prev => prev.map(a => a.alert_id === alertId ? { ...a, status: 'ACKNOWLEDGED' } : a));
+    if (alertStats) {
+      const target = alerts.find(a => a.alert_id === alertId);
+      setAlertStats(prev => ({
+        ...prev,
+        pending_alerts: Math.max(0, prev.pending_alerts - (target?.status === 'PENDING' ? 1 : 0)),
+        escalated_alerts: Math.max(0, prev.escalated_alerts - (target?.status === 'ESCALATED' ? 1 : 0)),
+        acknowledged_alerts: prev.acknowledged_alerts + 1
+      }));
+    }
+
     try {
       await acknowledgeAlert(alertId, userId || 1);
-      load();
-    } catch (err) { alert('Failed to acknowledge: ' + err.message); }
+      // Silence load() here or just let the next poll sync it. 
+      // User wants 'immediate' update.
+    } catch (err) {
+      setAlerts(originalAlerts);
+      setAlertStats(originalStats);
+      alert('Failed to acknowledge: ' + err.message);
+    }
   };
 
   const patientName = (id) => patients.find(p => p.patient_id === id)?.name || `Patient ${id}`;

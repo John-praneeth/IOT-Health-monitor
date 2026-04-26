@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getHospitals, createHospital, updateHospital } from '../api';
+import { getHospitals, createHospital, updateHospital, deleteHospital } from '../api';
 
 const COUNTRY_CODES = [
   { code: '91',  label: '🇮🇳 +91' },
@@ -97,6 +97,15 @@ export default function Hospitals() {
     }
   };
 
+  const handleDelete = async (id) => {
+    if (!window.confirm('Permanently remove this medical center? Staff and patients will be unassigned.')) return;
+    setError('');
+    try {
+      await deleteHospital(id);
+      load();
+    } catch (err) { setError(err.response?.data?.detail || 'Delete failed'); }
+  };
+
   return (
     <div style={{ animation: 'reveal 0.4s ease-out' }}>
       <div className="main-topbar">
@@ -120,10 +129,10 @@ export default function Hospitals() {
       )}
 
       {canManage && showAdd && (
-        <div className="card" style={{ marginBottom: 24 }}>
-          <div className="card-header"><h2>New Hospital</h2></div>
-          <form onSubmit={handleSubmit}>
-            <div className="form-grid">
+        <div className="card">
+          <div className="card-header"><h2>New Hospital Registration</h2></div>
+          <form onSubmit={handleSubmit} style={{ padding: 24 }}>
+            <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
               <div className="form-group">
                 <label>Hospital Name</label>
                 <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="City General Hospital" />
@@ -143,19 +152,15 @@ export default function Hospitals() {
                     onChange={e => setForm({ ...form, phone: e.target.value.replace(/[^0-9]/g, '') })}
                     placeholder="4023607777" style={{ flex: 1, minWidth: 0, width: 'auto' }} />
                 </div>
-                {form.phone.trim() && (
-                  <small style={{ color:'#64748b', fontFamily:'monospace' }}>
-                    → +{countryCode}{form.phone.replace(/^0+/, '')}
-                  </small>
-                )}
               </div>
               <div className="form-group">
                 <label>Email</label>
                 <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="info@hospital.com" />
               </div>
             </div>
-            <div className="form-actions">
+            <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
               <button type="submit" className="btn btn-primary">Save Hospital</button>
+              <button type="button" className="btn" style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8' }} onClick={() => setShowAdd(false)}>Cancel</button>
             </div>
           </form>
         </div>
@@ -164,48 +169,56 @@ export default function Hospitals() {
       <div className="card">
         <div className="card-header"><h2>All Hospitals ({hospitals.length})</h2></div>
         {loading ? <div className="spinner" /> : (
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th><th>Name</th><th>Location</th><th>Phone</th><th>Email</th>{canManage && <th>Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {hospitals.length === 0 && (
-                <tr><td colSpan={canManage ? 6 : 5} className="empty-state">No hospitals yet.</td></tr>
-              )}
-              {hospitals.map(h => (
-                <tr key={h.hospital_id}>
-                  <td>#{h.hospital_id}</td>
-                  <td><strong>{h.name}</strong></td>
-                  <td>{h.location}</td>
-                  <td>{formatPhone(h.phone)}</td>
-                  <td>{h.email || '—'}</td>
-                  {canManage && (
-                    <td>
-                      <button className="btn btn-success btn-sm" onClick={() => openEdit(h)}>✏️ Edit</button>
-                    </td>
-                  )}
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th><th>Name</th><th>Location</th><th>Phone</th><th>Email</th>{canManage && <th>Actions</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {hospitals.length === 0 && (
+                  <tr><td colSpan={canManage ? 6 : 5} className="empty-state">No hospitals yet.</td></tr>
+                )}
+                {hospitals.map(h => (
+                  <tr key={h.hospital_id}>
+                    <td>#{h.hospital_id}</td>
+                    <td><strong>{h.name}</strong></td>
+                    <td>{h.location}</td>
+                    <td>{formatPhone(h.phone)}</td>
+                    <td>{h.email || '—'}</td>
+                    {canManage && (
+                      <td>
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button className="btn btn-success btn-sm" style={{ padding: '4px 8px' }} onClick={() => openEdit(h)}>✏️</button>
+                          <button className="btn btn-danger btn-sm" style={{ padding: '4px 8px' }} onClick={() => handleDelete(h.hospital_id)}>🗑</button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
       {editing && (
         <div className="modal-backdrop" onClick={() => setEditing(null)}>
-          <div className="modal-card" style={{ padding:24, width:520 }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ color:'#e2e8f0', marginTop:0 }}>✏️ Edit Hospital</h3>
-            <div className="form-grid" style={{ padding:0 }}>
+          <div className="card" style={{ width: 500, maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            <div className="card-header">
+              <h2>✏️ Edit Hospital</h2>
+              <button onClick={() => setEditing(null)} style={{ background:'none', border:'none', color:'#94a3b8', fontSize:18, cursor:'pointer' }}>✕</button>
+            </div>
+            <div className="form-grid" style={{ padding: 24, gap: 16 }}>
               <div className="form-group"><label>Name</label><input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></div>
               <div className="form-group"><label>Location</label><input value={editForm.location} onChange={e => setEditForm({ ...editForm, location: e.target.value })} /></div>
               <div className="form-group"><label>Phone</label><input value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} /></div>
               <div className="form-group"><label>Email</label><input type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
             </div>
-            <div style={{ display:'flex', gap:10, marginTop:12 }}>
-              <button className="btn btn-success" onClick={saveEdit}>Save Changes</button>
-              <button className="btn" style={{ background:'#334155', color:'#e2e8f0' }} onClick={() => setEditing(null)}>Cancel</button>
+            <div style={{ display:'flex', gap:10, padding: '0 24px 24px' }}>
+              <button className="btn btn-primary" onClick={saveEdit}>Save Changes</button>
+              <button className="btn" style={{ background:'rgba(255,255,255,0.05)', color:'#e2e8f0' }} onClick={() => setEditing(null)}>Cancel</button>
             </div>
           </div>
         </div>

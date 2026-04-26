@@ -104,8 +104,8 @@ class DoctorBase(ProjectBaseModel):
 
 
 class DoctorCreate(DoctorBase):
-    username: Optional[str] = None   # if set, a login account is created
-    password: Optional[str] = None   # required when username is provided
+    username: Optional[str] = Field(None, max_length=100)   # if set, a login account is created
+    password: Optional[str] = Field(None, min_length=6, max_length=200)   # required when username is provided
 
 
 class DoctorUpdate(ProjectBaseModel):
@@ -128,12 +128,12 @@ class DoctorOut(DoctorBase):
 class DoctorSelfRegister(ProjectBaseModel):
     """Used by POST /auth/register/doctor — creates Doctor + User in one step."""
     username: str = Field(..., min_length=3, max_length=100)
-    password: str = Field(..., min_length=6)
-    name: str
-    specialization: str
+    password: str = Field(..., min_length=6, max_length=200)
+    name: str = Field(..., min_length=1, max_length=100)
+    specialization: str = Field(..., min_length=1, max_length=100)
     hospital_id: Optional[int] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[str] = Field(None, max_length=100)
     is_freelancer: bool = True
 
 
@@ -147,8 +147,8 @@ class NurseBase(ProjectBaseModel):
 
 
 class NurseCreate(NurseBase):
-    username: Optional[str] = None   # if set, a login account is created
-    password: Optional[str] = None   # required when username is provided
+    username: Optional[str] = Field(None, max_length=100)   # if set, a login account is created
+    password: Optional[str] = Field(None, min_length=6, max_length=200)   # required when username is provided
 
 
 class NurseUpdate(ProjectBaseModel):
@@ -169,12 +169,12 @@ class NurseOut(NurseBase):
 class NurseSelfRegister(ProjectBaseModel):
     """Used by POST /auth/register/nurse — creates Nurse + User in one step."""
     username: str = Field(..., min_length=3, max_length=100)
-    password: str = Field(..., min_length=6)
-    name: str
-    department: Optional[str] = None
+    password: str = Field(..., min_length=6, max_length=200)
+    name: str = Field(..., min_length=1, max_length=100)
+    department: Optional[str] = Field(None, max_length=100)
     hospital_id: Optional[int] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[str] = Field(None, max_length=100)
 
 
 # ── Assignment ────────────────────────────────────────────────────────────────
@@ -198,7 +198,7 @@ class AlertAcknowledge(ProjectBaseModel):
 class RegisterRequest(ProjectBaseModel):
     """Staff registration (ADMIN creates other staff users)."""
     username: str = Field(..., min_length=3, max_length=100)
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=6, max_length=200)
     role: str = Field(..., pattern=r"^(ADMIN|DOCTOR|NURSE)$")
     doctor_id: Optional[int] = None
     nurse_id: Optional[int] = None

@@ -394,7 +394,7 @@ def send_whatsapp_message(phone: str, body: str, retries: int = 3,
 
     for attempt in range(1, retries + 1):
         try:
-            response = httpx.post(url, json=payload, timeout=30)
+            response = httpx.post(url, json=payload, timeout=5)
 
             if response.status_code == 200:
                 data = response.json()

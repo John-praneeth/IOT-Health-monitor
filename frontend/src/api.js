@@ -147,9 +147,11 @@ export const getNursePatients  = (id)        => API.get(`/nurses/${id}/patients`
 // ── Hospitals ─────────────────────────────────────────────
 export const getHospitals  = ()              => API.get('/hospitals');
 export const createHospital= (data)          => API.post('/hospitals', data);
-export const updateHospital= (id, data)      => API.put(`/hospitals/${id}`, data);
+export const updateHospital = (id, data) => API.put(`/hospitals/${id}`, data);
+export const deleteHospital = (id)       => API.delete(`/hospitals/${id}`);
 
-// ── Notifications ─────────────────────────────────────────
+// ── Doctors ────────────────────────────────────────────────
+
 export const getMyNotifications = (params={}) => API.get('/notifications/my', { params });
 export const markNotificationRead = (id)      => API.patch(`/notifications/${id}/read`);
 export const markAllNotificationsRead = ()    => API.post('/notifications/read-all');

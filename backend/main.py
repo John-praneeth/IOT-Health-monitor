@@ -772,6 +772,20 @@ def update_hospital(
     return updated
 
 
+@app.delete("/hospitals/{hospital_id}", tags=["Hospitals"],
+             summary="Delete medical center",
+             description="Permanently removes the hospital record and unassigns staff/patients.")
+def delete_hospital(
+    hospital_id: int,
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
+):
+    h = crud.delete_hospital(db, hospital_id, user_id=current_user.user_id)
+    if not h:
+        raise HTTPException(status_code=404, detail="Hospital not found")
+    return {"detail": "Hospital deleted successfully"}
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  DOCTOR ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -826,6 +840,15 @@ def update_doctor(
         raise HTTPException(status_code=403, detail="Not authorized to update doctor")
     if current_user.role == "DOCTOR" and current_user.doctor_id != doctor_id:
         raise HTTPException(status_code=403, detail="Not authorized to update doctor")
+    
+    # Critical Metadata Protection: Only ADMIN can change hospital_id or freelancer status
+    if current_user.role != "ADMIN":
+        existing = crud.get_doctor(db, doctor_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Doctor not found")
+        payload.hospital_id = existing.hospital_id
+        payload.is_freelancer = existing.is_freelancer
+
     d = crud.update_doctor(db, doctor_id, payload, user_id=current_user.user_id)
     if not d:
         raise HTTPException(status_code=404, detail="Doctor not found")
@@ -912,6 +935,14 @@ def update_nurse(
         raise HTTPException(status_code=403, detail="Not authorized to update nurse")
     if current_user.role == "NURSE" and current_user.nurse_id != nurse_id:
         raise HTTPException(status_code=403, detail="Not authorized to update nurse")
+    
+    # Critical Metadata Protection: Only ADMIN can change hospital_id
+    if current_user.role != "ADMIN":
+        existing = crud.get_nurse(db, nurse_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Nurse not found")
+        payload.hospital_id = existing.hospital_id
+
     n = crud.update_nurse(db, nurse_id, payload, user_id=current_user.user_id)
     if not n:
         raise HTTPException(status_code=404, detail="Nurse not found")

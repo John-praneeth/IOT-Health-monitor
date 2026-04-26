@@ -47,6 +47,28 @@ def get_audit_logs(db: Session, entity: str = None, limit: int = 200, offset: in
     return q.order_by(models.AuditLog.timestamp.desc()).offset(offset).limit(limit).all()
 
 
+def delete_hospital(db: Session, hospital_id: int, user_id: int):
+    """Hard delete: physically remove hospital from the DB.
+    Nullifies hospital_id on linked Patient, Doctor, and Nurse records.
+    """
+    hospital = db.query(models.Hospital).filter(models.Hospital.hospital_id == hospital_id).first()
+    if hospital:
+        # 1. Nullify linked Patient hospital_id
+        db.query(models.Patient).filter(models.Patient.hospital_id == hospital_id).update({"hospital_id": None})
+        
+        # 2. Nullify linked Doctor hospital_id
+        db.query(models.Doctor).filter(models.Doctor.hospital_id == hospital_id).update({"hospital_id": None})
+        
+        # 3. Nullify linked Nurse hospital_id
+        db.query(models.Nurse).filter(models.Nurse.hospital_id == hospital_id).update({"hospital_id": None})
+        
+        # 4. Delete hospital
+        db.delete(hospital)
+        db.commit()
+        write_audit(db, "DELETE", "hospital", entity_id=hospital_id, user_id=user_id)
+    return hospital
+
+
 # ── Vitals ────────────────────────────────────────────────────────────────────
 def create_vitals(db: Session, vital):
     if isinstance(vital, dict):

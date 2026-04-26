@@ -119,11 +119,27 @@ export default function Dashboard() {
   const escPct = Math.round((escA / totalA) * 100);
   const ackPct = Math.max(0, 100 - pndPct - escPct);
 
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const handleMarkAllRead = async () => {
+    try {
+      await markAllNotificationsRead();
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch {}
+  };
+
+  const handleMarkOneRead = async (id) => {
+    try {
+      await markNotificationRead(id);
+      setNotifications(prev => prev.map(n => n.notification_id === id ? { ...n, is_read: true } : n));
+    } catch {}
+  };
+
   return (
     <div style={{ animation: 'reveal 0.5s ease-out' }}>
       <div className="main-topbar">
         <div>
-          <div className="main-title">Clinical Dashboard</div>
+          <div className="main-title">Medical Command Center</div>
           <div className="main-subtitle">
             <span className="live-tag">
               <span className="live-dot" />
@@ -136,7 +152,54 @@ export default function Dashboard() {
             )}
           </div>
         </div>
-        <div className="topbar-actions">
+        <div className="topbar-actions" style={{ position: 'relative' }}>
+           <button
+             className="btn"
+             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--stroke)', padding: '8px 12px', position: 'relative', fontSize: 18 }}
+             onClick={() => setShowNotifs(!showNotifs)}
+             title="System Notifications"
+           >
+             🔔
+             {unreadCount > 0 && (
+               <span style={{
+                 position: 'absolute', top: -4, right: -4, background: 'var(--danger)',
+                 color: '#fff', borderRadius: '50%', width: 18, height: 18,
+                 fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                 boxShadow: '0 0 10px var(--danger-glow)'
+               }}>
+                 {unreadCount}
+               </span>
+             )}
+           </button>
+
+           {showNotifs && (
+             <div className="card" style={{
+               position: 'absolute', top: 50, right: 0, width: 320, zIndex: 100,
+               maxHeight: 400, overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
+             }}>
+               <div className="card-header" style={{ padding: '12px 20px' }}>
+                 <h3 style={{ fontSize: 12, margin: 0 }}>NOTIFICATIONS</h3>
+                 {unreadCount > 0 && (
+                   <button onClick={handleMarkAllRead} style={{ background:'none', border:'none', color:'var(--primary)', fontSize:10, fontWeight:800, cursor:'pointer' }}>MARK ALL READ</button>
+                 )}
+               </div>
+               {notifications.length === 0 ? (
+                 <div style={{ padding: 20, textAlign: 'center', color: '#64748b', fontSize: 12 }}>No system notifications.</div>
+               ) : (
+                 notifications.map(n => (
+                   <div key={n.notification_id} onClick={() => handleMarkOneRead(n.notification_id)} style={{
+                     padding: '12px 20px', borderBottom: '1px solid var(--stroke)',
+                     background: n.is_read ? 'transparent' : 'rgba(34, 211, 238, 0.05)',
+                     cursor: 'pointer', transition: 'background 0.2s'
+                   }}>
+                     <div style={{ fontSize: 12, color: n.is_read ? '#94a3b8' : '#f1f5f9', fontWeight: n.is_read ? 400 : 700 }}>{n.message}</div>
+                     <div style={{ fontSize: 9, color: '#64748b', marginTop: 4 }}>{n.created_at ? toLocal(n.created_at).toLocaleTimeString() : ''}</div>
+                   </div>
+                 ))
+               )}
+             </div>
+           )}
+
            <button className="btn btn-primary btn-sm" onClick={fetchAll}>Refresh Data</button>
         </div>
       </div>
