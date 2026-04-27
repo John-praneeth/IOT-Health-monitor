@@ -81,9 +81,9 @@ class Vitals(Base):
         Index("idx_vitals_patient_ts", "patient_id", timestamp.desc()),
         UniqueConstraint("patient_id", "timestamp", "source", name="uq_vitals_patient_ts_source"),
         Index("idx_vitals_source", "source"),
-        CheckConstraint("heart_rate BETWEEN 30 AND 220", name="ck_vitals_heart_rate_range"),
-        CheckConstraint("spo2 BETWEEN 70 AND 100", name="ck_vitals_spo2_range"),
-        CheckConstraint("temperature BETWEEN 85 AND 110", name="ck_vitals_temperature_range"),
+        CheckConstraint("heart_rate BETWEEN 0 AND 300", name="ck_vitals_heart_rate_range"),
+        CheckConstraint("spo2 BETWEEN 0 AND 100", name="ck_vitals_spo2_range"),
+        CheckConstraint("temperature BETWEEN 50 AND 150", name="ck_vitals_temperature_range"),
         CheckConstraint("source IN ('fake','thingspeak')", name="ck_vitals_source"),
     )
 

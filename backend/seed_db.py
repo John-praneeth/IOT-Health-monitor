@@ -30,6 +30,17 @@ with SessionLocal() as mig_db:
         if engine.name == "postgresql":
             mig_db.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS details VARCHAR(1000);"))
             mig_db.execute(text("ALTER TABLE alert_escalations ALTER COLUMN escalated_to_doctor DROP NOT NULL;"))
+            
+            # Relax Vitals constraints
+            mig_db.execute(text("ALTER TABLE vitals DROP CONSTRAINT IF EXISTS ck_vitals_heart_rate_range;"))
+            mig_db.execute(text("ALTER TABLE vitals ADD CONSTRAINT ck_vitals_heart_rate_range CHECK (heart_rate BETWEEN 0 AND 300);"))
+            
+            mig_db.execute(text("ALTER TABLE vitals DROP CONSTRAINT IF EXISTS ck_vitals_spo2_range;"))
+            mig_db.execute(text("ALTER TABLE vitals ADD CONSTRAINT ck_vitals_spo2_range CHECK (spo2 BETWEEN 0 AND 100);"))
+            
+            mig_db.execute(text("ALTER TABLE vitals DROP CONSTRAINT IF EXISTS ck_vitals_temperature_range;"))
+            mig_db.execute(text("ALTER TABLE vitals ADD CONSTRAINT ck_vitals_temperature_range CHECK (temperature BETWEEN 50 AND 150);"))
+            
             mig_db.commit()
             print("Schema updates verified.")
     except Exception as e:
