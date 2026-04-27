@@ -1392,13 +1392,6 @@ def _allowed_patient_ids_for_user(db: Session, user: models.User) -> Optional[se
                 models.Patient.assigned_doctor == user.doctor_id
             ).all()
         }
-        doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == user.doctor_id).first()
-        if doctor and doctor.hospital_id:
-            ids.update(
-                row[0] for row in db.query(models.Patient.patient_id).filter(
-                    models.Patient.hospital_id == doctor.hospital_id
-                ).all()
-            )
         return ids
 
     if user.role == "NURSE":

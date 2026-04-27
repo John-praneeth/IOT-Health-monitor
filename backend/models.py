@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, TIMESTAMP, Index, func, CheckConstraint
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, TIMESTAMP, Index, func, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -79,6 +79,7 @@ class Vitals(Base):
 
     __table_args__ = (
         Index("idx_vitals_patient_ts", "patient_id", timestamp.desc()),
+        UniqueConstraint("patient_id", "timestamp", "source", name="uq_vitals_patient_ts_source"),
         Index("idx_vitals_source", "source"),
         CheckConstraint("heart_rate BETWEEN 30 AND 220", name="ck_vitals_heart_rate_range"),
         CheckConstraint("spo2 BETWEEN 70 AND 100", name="ck_vitals_spo2_range"),

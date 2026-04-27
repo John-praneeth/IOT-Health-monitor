@@ -693,6 +693,9 @@ def assign_doctor(db: Session, patient_id: int, doctor_id: int | None):
     doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == doctor_id).first()
     if not doctor:
         return None
+    if doctor.is_available is False:
+        # Cannot assign to an unavailable doctor
+        return None
     patient.assigned_doctor = doctor_id
     _validate_patient_links(
         db,
