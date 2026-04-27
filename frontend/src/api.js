@@ -2,7 +2,7 @@ import axios from 'axios';
 import { API_BASE_URL } from './config';
 
 const API = axios.create({ baseURL: API_BASE_URL });
-const AUTH_TIMEOUT_MS = 15000;
+const AUTH_TIMEOUT_MS = 45000;
 
 // ── Token interceptor: attach JWT to every request if available ──
 API.interceptors.request.use((config) => {
@@ -16,18 +16,85 @@ API.interceptors.request.use((config) => {
 // ── Error interceptor: normalize backend error format ──
 // Backend returns { success: false, error: { message: "..." } }
 // but frontend expects err.response.data.detail — bridge both.
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 API.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.clear();
-      if (window.location.pathname !== '/') {
-        window.location.href = '/';
+  async (error) => {
+    const originalRequest = error.config;
+    
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      if (originalRequest.url === '/auth/refresh' || originalRequest.url === '/auth/login') {
+        localStorage.clear();
+        localStorage.setItem('session_expired', 'true');
+        if (window.location.pathname !== '/') {
+          window.location.href = '/';
+        }
+        return Promise.reject(error);
+      }
+
+      if (isRefreshing) {
+        return new Promise(function(resolve, reject) {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return API(originalRequest);
+        }).catch(err => {
+          return Promise.reject(err);
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true });
+        const newToken = data.access_token;
+        localStorage.setItem('token', newToken);
+        if (data.role) localStorage.setItem('role', data.role);
+        if (data.username) localStorage.setItem('username', data.username);
+        
+        API.defaults.headers.common.Authorization = `Bearer ${newToken}`;
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        
+        processQueue(null, newToken);
+        return API(originalRequest);
+      } catch (err) {
+        processQueue(err, null);
+        localStorage.clear();
+        localStorage.setItem('session_expired', 'true');
+        if (window.location.pathname !== '/') {
+          window.location.href = '/';
+        }
+        return Promise.reject(err);
+      } finally {
+        isRefreshing = false;
       }
     }
+    
     if (error.response?.data?.error?.message && !error.response.data.detail) {
       error.response.data.detail = error.response.data.error.message;
     }
+
+    // Handle Network Error (Server Offline)
+    if (!error.response && (error.code === 'ECONNABORTED' || error.message === 'Network Error')) {
+      window.dispatchEvent(new CustomEvent('server-offline', { 
+        detail: { message: 'Server is currently unreachable. Please check your connection.' } 
+      }));
+    }
+
     return Promise.reject(error);
   }
 );
@@ -36,6 +103,7 @@ API.interceptors.response.use(
 export const registerDoctor   = (data) => API.post('/auth/register/doctor', data);
 export const registerNurse    = (data) => API.post('/auth/register/nurse', data);
 export const login            = (data) => API.post('/auth/login', data, { timeout: AUTH_TIMEOUT_MS });
+export const logout           = ()     => API.post('/auth/logout');
 export const getMe            = ()     => API.get('/auth/me');
 export const resetPassword    = (data) => API.post('/auth/reset-password', data);
 export const forgotPasswordRequest = (data) => API.post('/auth/forgot-password/request', data, { timeout: AUTH_TIMEOUT_MS });
@@ -81,8 +149,11 @@ export const getNursePatients  = (id)        => API.get(`/nurses/${id}/patients`
 // ── Hospitals ─────────────────────────────────────────────
 export const getHospitals  = ()              => API.get('/hospitals');
 export const createHospital= (data)          => API.post('/hospitals', data);
+export const updateHospital = (id, data) => API.put(`/hospitals/${id}`, data);
+export const deleteHospital = (id)       => API.delete(`/hospitals/${id}`);
 
-// ── Notifications ─────────────────────────────────────────
+// ── Doctors ────────────────────────────────────────────────
+
 export const getMyNotifications = (params={}) => API.get('/notifications/my', { params });
 export const markNotificationRead = (id)      => API.patch(`/notifications/${id}/read`);
 export const markAllNotificationsRead = ()    => API.post('/notifications/read-all');

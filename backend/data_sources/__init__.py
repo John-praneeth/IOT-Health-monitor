@@ -121,6 +121,11 @@ def update_data_source_config(
     return get_data_source_config()
 
 
+def get_active_source_name() -> str:
+    """Return the string identifier of the current source (fake/thingspeak)."""
+    return get_data_source_config()["source"]
+
+
 def get_source() -> VitalSource:
     """Return the configured data source, refreshing if config changed."""
     global _source_instance, _source_signature

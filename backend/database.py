@@ -21,6 +21,10 @@ if not DATABASE_URL:
         "Create a backend/.env file with: DATABASE_URL=postgresql://user:pass@localhost:5432/patient_monitor"
     )
 
+# Normalize legacy postgres:// to postgresql:// for SQLAlchemy
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 db_connect_args: dict[str, object] = {}
 if DATABASE_URL.startswith("postgresql"):
     connect_timeout = int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5"))

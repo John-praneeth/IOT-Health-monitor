@@ -223,38 +223,18 @@ export default function SystemStatus() {
   };
 
   return (
-    <div>
-      {/* Header */}
-      <div className="page-header">
-        <h1>🖥️ System Status</h1>
-        <p>Live overview of services, database health, and alert activity</p>
-      </div>
-
-      <div className="graphic-banner">
-        <div className="banner-title">Platform Reliability Matrix</div>
-        <div className="banner-subtitle">Real-time operational health of core infrastructure and message delivery.</div>
-        <div className="chip-row">
-          <span className="status-chip">DB Health</span>
-          <span className="status-chip">Redis Signal</span>
-          <span className="status-chip">WhatsApp Pipeline</span>
+    <div style={{ animation: 'reveal 0.4s ease-out' }}>
+      <div className="main-topbar">
+        <div>
+          <div className="main-title">System Health Monitor</div>
+          <div className="main-subtitle">Infrastructure telemetry and administrative service controls</div>
         </div>
-      </div>
-
-      {/* Toolbar */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        {lastCheck && <span style={{ color: '#64748b', fontSize: 12 }}>Last updated: {lastCheck}</span>}
-        <button
-          onClick={fetchAll}
-          disabled={loading}
-          style={{
-            padding: '7px 18px', borderRadius: 7, border: '1px solid #475569',
-            background: '#1e293b', color: '#60a5fa', fontSize: 13,
-            cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 600,
-            opacity: loading ? 0.6 : 1,
-          }}
-        >
-          {loading ? '⏳ Checking…' : '🔄 Refresh'}
-        </button>
+        <div className="topbar-actions">
+           {lastCheck && <span className="live-tag" style={{ marginRight: 12 }}>Last Check: {lastCheck}</span>}
+           <button className="btn btn-primary btn-sm" onClick={fetchAll} disabled={loading}>
+             {loading ? '⏳ Syncing...' : '⟳ Refresh Status'}
+           </button>
+        </div>
       </div>
 
       {/* Overall Banner */}
@@ -373,22 +353,30 @@ export default function SystemStatus() {
               <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 0, marginBottom: 10 }}>
                 Current state: <strong style={{ color: fakeVitalsStatus?.enabled ? '#4ade80' : '#f87171' }}>{fakeVitalsStatus?.enabled ? 'RUNNING' : 'STOPPED'}</strong>
               </p>
-              <div className="ops-actions">
-                <button
-                  onClick={handleForceStart}
-                  disabled={runtimeBusy}
-                  style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #166534', background: '#14532d', color: '#dcfce7', fontWeight: 600, cursor: runtimeBusy ? 'not-allowed' : 'pointer', opacity: runtimeBusy ? 0.6 : 1 }}
-                >
-                  ▶ Force Start
-                </button>
-                <button
-                  onClick={handleForceStop}
-                  disabled={runtimeBusy}
-                  style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #7f1d1d', background: '#7f1d1d', color: '#fee2e2', fontWeight: 600, cursor: runtimeBusy ? 'not-allowed' : 'pointer', opacity: runtimeBusy ? 0.6 : 1 }}
-                >
-                  ⏹ Force Stop
-                </button>
-              </div>
+              
+              {sourceConfig?.source === 'thingspeak' ? (
+                <div style={{ padding: '12px', background: 'rgba(34, 211, 238, 0.05)', border: '1px solid rgba(34, 211, 238, 0.2)', borderRadius: 8, color: '#22d3ee', fontSize: 12, lineHeight: 1.4 }}>
+                  <strong>Note:</strong> Fake Vitals controls are disabled because the system is currently receiving real telemetry from <strong>ThingSpeak</strong>.
+                </div>
+              ) : (
+                <div className="ops-actions">
+                  <button
+                    onClick={handleForceStart}
+                    disabled={runtimeBusy}
+                    style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #166534', background: '#14532d', color: '#dcfce7', fontWeight: 600, cursor: runtimeBusy ? 'not-allowed' : 'pointer', opacity: runtimeBusy ? 0.6 : 1 }}
+                  >
+                    ▶ Force Start
+                  </button>
+                  <button
+                    onClick={handleForceStop}
+                    disabled={runtimeBusy}
+                    style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #7f1d1d', background: '#7f1d1d', color: '#fee2e2', fontWeight: 600, cursor: runtimeBusy ? 'not-allowed' : 'pointer', opacity: runtimeBusy ? 0.6 : 1 }}
+                  >
+                    ⏹ Force Stop
+                  </button>
+                </div>
+              )}
+              
               <div style={{ marginTop: 10 }}>
                 {runtimeMessage && <span className={`ops-msg ${runtimeMessage.toLowerCase().includes('failed') ? 'ops-msg-error' : 'ops-msg-success'}`}>{runtimeMessage}</span>}
               </div>

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, TIMESTAMP, Index, func, CheckConstraint
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, TIMESTAMP, Index, func, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -23,7 +23,7 @@ class Doctor(Base):
     doctor_id      = Column(Integer, primary_key=True, index=True)
     name           = Column(String(100))
     specialization = Column(String(100), nullable=True)
-    hospital_id    = Column(Integer, ForeignKey("hospitals.hospital_id"), nullable=True)
+    hospital_id    = Column(Integer, ForeignKey("hospitals.hospital_id"), nullable=True, index=True)
     phone          = Column(String(20))
     email          = Column(String(100))
     is_freelancer  = Column(Boolean, default=False)
@@ -40,7 +40,7 @@ class Nurse(Base):
     nurse_id    = Column(Integer, primary_key=True, index=True)
     name        = Column(String(100))
     department  = Column(String(100), nullable=True)
-    hospital_id = Column(Integer, ForeignKey("hospitals.hospital_id"), nullable=True)
+    hospital_id = Column(Integer, ForeignKey("hospitals.hospital_id"), nullable=True, index=True)
     phone       = Column(String(20))
     email       = Column(String(100))
     is_active   = Column(Boolean, default=True, nullable=False)
@@ -56,9 +56,9 @@ class Patient(Base):
     name            = Column(String(100))
     age             = Column(Integer)
     room_number     = Column(String(20))
-    hospital_id     = Column(Integer, ForeignKey("hospitals.hospital_id"), nullable=True)
-    assigned_doctor = Column(Integer, ForeignKey("doctors.doctor_id"), nullable=True)
-    assigned_nurse  = Column(Integer, ForeignKey("nurses.nurse_id"), nullable=True)
+    hospital_id     = Column(Integer, ForeignKey("hospitals.hospital_id"), nullable=True, index=True)
+    assigned_doctor = Column(Integer, ForeignKey("doctors.doctor_id"), nullable=True, index=True)
+    assigned_nurse  = Column(Integer, ForeignKey("nurses.nurse_id"), nullable=True, index=True)
     is_active       = Column(Boolean, default=True, nullable=False)
 
     hospital = relationship("Hospital", back_populates="patients")
@@ -79,10 +79,11 @@ class Vitals(Base):
 
     __table_args__ = (
         Index("idx_vitals_patient_ts", "patient_id", timestamp.desc()),
+        UniqueConstraint("patient_id", "timestamp", "source", name="uq_vitals_patient_ts_source"),
         Index("idx_vitals_source", "source"),
-        CheckConstraint("heart_rate BETWEEN 30 AND 220", name="ck_vitals_heart_rate_range"),
-        CheckConstraint("spo2 BETWEEN 70 AND 100", name="ck_vitals_spo2_range"),
-        CheckConstraint("temperature BETWEEN 85 AND 110", name="ck_vitals_temperature_range"),
+        CheckConstraint("heart_rate BETWEEN 0 AND 300", name="ck_vitals_heart_rate_range"),
+        CheckConstraint("spo2 BETWEEN 0 AND 100", name="ck_vitals_spo2_range"),
+        CheckConstraint("temperature BETWEEN 50 AND 150", name="ck_vitals_temperature_range"),
         CheckConstraint("source IN ('fake','thingspeak')", name="ck_vitals_source"),
     )
 
@@ -92,11 +93,11 @@ class Alert(Base):
 
     alert_id        = Column(Integer, primary_key=True, index=True)
     patient_id      = Column(Integer, ForeignKey("patients.patient_id"))
-    vital_id        = Column(Integer, ForeignKey("vitals.vital_id"))
+    vital_id        = Column(Integer, ForeignKey("vitals.vital_id"), index=True)
     alert_type      = Column(String(50))
     source          = Column(String(20), nullable=False, default="fake", server_default="fake")
     status          = Column(String(20), default="PENDING")
-    created_at      = Column(TIMESTAMP, server_default=func.now())
+    created_at      = Column(TIMESTAMP, server_default=func.now(), index=True)
     last_checked_at = Column(TIMESTAMP, nullable=True)
     acknowledged_by = Column(Integer, nullable=True)
     acknowledged_at = Column(TIMESTAMP, nullable=True)
@@ -123,8 +124,8 @@ class User(Base):
     username      = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     role          = Column(String(20), nullable=False)
-    doctor_id     = Column(Integer, ForeignKey("doctors.doctor_id"), nullable=True)
-    nurse_id      = Column(Integer, ForeignKey("nurses.nurse_id"), nullable=True)
+    doctor_id     = Column(Integer, ForeignKey("doctors.doctor_id"), nullable=True, index=True)
+    nurse_id      = Column(Integer, ForeignKey("nurses.nurse_id"), nullable=True, index=True)
 
     __table_args__ = (
         CheckConstraint("role IN ('ADMIN','DOCTOR','NURSE')", name="ck_user_role"),
@@ -135,8 +136,8 @@ class AlertEscalation(Base):
     __tablename__ = "alert_escalations"
 
     escalation_id       = Column(Integer, primary_key=True, index=True)
-    alert_id            = Column(Integer, ForeignKey("alerts.alert_id"), nullable=False)
-    escalated_to_doctor = Column(Integer, ForeignKey("doctors.doctor_id"), nullable=False)
+    alert_id            = Column(Integer, ForeignKey("alerts.alert_id"), nullable=False, index=True)
+    escalated_to_doctor = Column(Integer, ForeignKey("doctors.doctor_id"), nullable=True, index=True)
     escalated_at        = Column(TIMESTAMP, server_default=func.now())
 
     alert  = relationship("Alert",  back_populates="escalations")
@@ -148,11 +149,11 @@ class AlertNotification(Base):
     __tablename__ = "alert_notifications"
 
     notification_id = Column(Integer, primary_key=True, index=True)
-    alert_id        = Column(Integer, ForeignKey("alerts.alert_id"), nullable=False)
-    user_id         = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    alert_id        = Column(Integer, ForeignKey("alerts.alert_id"), nullable=False, index=True)
+    user_id         = Column(Integer, ForeignKey("users.user_id"), nullable=False, index=True)
     message         = Column(String(500), nullable=False)
     is_read         = Column(Boolean, default=False)
-    created_at      = Column(TIMESTAMP, server_default=func.now())
+    created_at      = Column(TIMESTAMP, server_default=func.now(), index=True)
 
     alert = relationship("Alert", back_populates="notifications")
     user  = relationship("User")
@@ -162,11 +163,17 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     log_id    = Column(Integer, primary_key=True, index=True)
-    user_id   = Column(Integer, nullable=True)
+    user_id   = Column(Integer, nullable=True, index=True)
     action    = Column(String(100), nullable=False)
     entity    = Column(String(50), nullable=False)
     entity_id = Column(Integer, nullable=True)
-    timestamp = Column(TIMESTAMP, server_default=func.now())
+    details   = Column(String(1000), nullable=True)
+    timestamp = Column(TIMESTAMP, server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("idx_audit_entity_id", "entity", "entity_id"),
+        Index("idx_audit_timestamp_desc", timestamp.desc()),
+    )
 
 
 class ChatMessage(Base):
@@ -177,7 +184,7 @@ class ChatMessage(Base):
     sender_username = Column(String(100), nullable=False)
     sender_role     = Column(String(20), nullable=False)
     message         = Column(String(2000), nullable=False)
-    created_at      = Column(TIMESTAMP, server_default=func.now())
+    created_at      = Column(TIMESTAMP, server_default=func.now(), index=True)
 
     patient = relationship("Patient")
 
@@ -198,7 +205,7 @@ class WhatsAppLog(Base):
     attempts        = Column(Integer, default=0)
     error           = Column(String(500), nullable=True)
     idempotency_key = Column(String(100), nullable=True, unique=True)
-    created_at      = Column(TIMESTAMP, server_default=func.now())
+    created_at      = Column(TIMESTAMP, server_default=func.now(), index=True)
     sent_at         = Column(TIMESTAMP, nullable=True)
 
     __table_args__ = (
@@ -214,10 +221,10 @@ class SLARecord(Base):
 
     sla_id              = Column(Integer, primary_key=True, index=True)
     alert_id            = Column(Integer, ForeignKey("alerts.alert_id"), unique=True, nullable=False)
-    patient_id          = Column(Integer, ForeignKey("patients.patient_id"), nullable=False)
+    patient_id          = Column(Integer, ForeignKey("patients.patient_id"), nullable=False, index=True)
     response_time_seconds = Column(Integer, nullable=True)
     breached            = Column(Boolean, default=False)
-    created_at          = Column(TIMESTAMP, server_default=func.now())
+    created_at          = Column(TIMESTAMP, server_default=func.now(), index=True)
 
     alert   = relationship("Alert")
     patient = relationship("Patient")
@@ -242,6 +249,7 @@ class PasswordResetToken(Base):
     code_hash = Column(String(255), nullable=False)
     expires_at = Column(TIMESTAMP, nullable=False)
     used = Column(Boolean, default=False, nullable=False)
+    failed_attempts = Column(Integer, default=0, nullable=False)
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     user = relationship("User")

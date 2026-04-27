@@ -8,22 +8,36 @@ Tests four scenarios against a WebSocket endpoint:
 """
 
 import asyncio
+import json
+import os
 import time
+from datetime import timedelta
 from dataclasses import dataclass
 from typing import Optional, Tuple
+from urllib import error, request
 from urllib.parse import urlencode
 
 import websockets
-from websockets.exceptions import InvalidStatusCode, InvalidStatus, ConnectionClosedError
+from websockets.exceptions import InvalidStatus, ConnectionClosedError
+
+from dotenv import load_dotenv
+
+from generate_test_tokens import build_token, DEFAULT_SUBJECT
 
 
-# Configure tokens here before running.
-VALID_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJBRE1JTiIsImV4cCI6MTc3NTU3Njk5M30._WGivGMnL6L_uZRHumTDm6suqM6pb3Jv8yj0v49vtys"
-EXPIRED_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJBRE1JTiIsInVzZXJfaWQiOiIxIiwiZXhwIjoxNzc1NTcxNTkzfQ.fxUvLcAKZi6N06BdbAQen5KX_C1E1Q-9qPnJ1dQQA2s"
+# Resolve test credentials from backend .env and/or environment overrides.
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "backend", ".env"))
+WS_TEST_USERNAME = os.getenv("WS_TEST_USERNAME", DEFAULT_SUBJECT)
+WS_TEST_PASSWORD = os.getenv("WS_TEST_PASSWORD") or os.getenv("ADMIN_PASSWORD", "admin123")
+
+# Expired token is best-effort; if backend runs with a temporary SECRET_KEY this will
+# still be rejected, which is acceptable for this negative test case.
+EXPIRED_TOKEN = build_token(timedelta(hours=-1))
 INVALID_TOKEN = "fake_token"
 
 # Target endpoint.
 WS_BASE_URL = "ws://localhost:8000/ws/vitals"
+HTTP_BASE_URL = "http://localhost:8000"
 
 
 @dataclass
@@ -37,6 +51,24 @@ def _build_url(token: Optional[str]) -> str:
     if token is None:
         return WS_BASE_URL
     return f"{WS_BASE_URL}?{urlencode({'token': token})}"
+
+
+def _fetch_valid_access_token() -> Optional[str]:
+    """Get a real access token from /auth/login for positive-path probing."""
+    body = json.dumps({"username": WS_TEST_USERNAME, "password": WS_TEST_PASSWORD}).encode("utf-8")
+    req = request.Request(
+        f"{HTTP_BASE_URL}/auth/login",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=5) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+            token = payload.get("access_token")
+            return token if isinstance(token, str) and token else None
+    except (error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return None
 
 
 async def _probe_connection(name: str, token: Optional[str], expect_success: bool) -> CaseResult:
@@ -66,23 +98,6 @@ async def _probe_connection(name: str, token: Optional[str], expect_success: boo
                 passed=False,
                 output=f"[TEST] {name} -> ⚠️ ERROR (unexpected connection in {elapsed_ms:.1f} ms)",
             )
-
-    except InvalidStatusCode as exc:
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        if expect_success:
-            return CaseResult(
-                name=name,
-                passed=False,
-                output=(
-                    f"[TEST] {name} -> ⚠️ ERROR "
-                    f"(rejected with status {exc.status_code} in {elapsed_ms:.1f} ms)"
-                ),
-            )
-        return CaseResult(
-            name=name,
-            passed=True,
-            output=f"[TEST] {name} -> ❌ REJECTED (expected, status {exc.status_code})",
-        )
 
     except InvalidStatus as exc:
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -133,21 +148,27 @@ async def _probe_connection(name: str, token: Optional[str], expect_success: boo
 
 def _validate_config() -> Tuple[bool, list[str]]:
     errors = []
-    if not VALID_TOKEN:
-        errors.append("VALID_TOKEN is empty")
+    if not WS_TEST_USERNAME:
+        errors.append("WS_TEST_USERNAME is empty")
+    if not WS_TEST_PASSWORD:
+        errors.append("WS_TEST_PASSWORD is empty")
     if not EXPIRED_TOKEN:
         errors.append("EXPIRED_TOKEN is empty")
     return (len(errors) == 0, errors)
 
 
 async def test_valid_token() -> CaseResult:
-    if not VALID_TOKEN:
+    valid_token = _fetch_valid_access_token()
+    if not valid_token:
         return CaseResult(
             name="Valid Token",
             passed=False,
-            output="[TEST] Valid Token -> ⚠️ ERROR (VALID_TOKEN is empty)",
+            output=(
+                "[TEST] Valid Token -> ⚠️ ERROR "
+                f"(could not obtain login token for user '{WS_TEST_USERNAME}')"
+            ),
         )
-    return await _probe_connection("Valid Token", VALID_TOKEN, expect_success=True)
+    return await _probe_connection("Valid Token", valid_token, expect_success=True)
 
 
 async def test_missing_token() -> CaseResult:
@@ -171,6 +192,7 @@ async def test_expired_token() -> CaseResult:
 async def run_all() -> int:
     print("WebSocket Auth Probe")
     print(f"Endpoint: {WS_BASE_URL}")
+    print(f"Login user: {WS_TEST_USERNAME}")
     print()
 
     config_ok, config_errors = _validate_config()

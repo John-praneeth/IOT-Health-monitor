@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { getPatients, getAlerts, getDoctors, getDashboardStats, getMyNotifications, markAllNotificationsRead, markNotificationRead, getVitals, getVitalsSourceConfig } from '../api';
 import { buildVitalsWsUrl } from '../config';
 
-// Treat DB timestamps as UTC → convert to local time correctly
 const toLocal = (ts) => ts ? new Date(ts.endsWith('Z') ? ts : ts + 'Z') : null;
 
 export default function Dashboard() {
@@ -22,46 +21,43 @@ export default function Dashboard() {
   const fetchAll = useCallback(async () => {
     try {
       const params = doctorFilter ? { doctor_id: doctorFilter } : {};
-      const [pRes, aRes, dRes, sRes, vRes] = await Promise.all([
+      const results = await Promise.allSettled([
         getPatients(params),
         getAlerts(doctorFilter ? { doctor_id: doctorFilter } : {}),
         getDoctors(),
         getDashboardStats(),
         getVitals({ limit: 100, ...(doctorFilter ? { doctor_id: doctorFilter } : {}) }),
       ]);
-      setPatients(pRes.data);
-      setAlerts(aRes.data);
-      setDoctors(dRes.data);
-      setStats(sRes.data);
-      const latestByPatient = {};
-      (vRes.data || []).forEach(v => {
-        if (v?.patient_id != null && !latestByPatient[v.patient_id]) {
-          latestByPatient[v.patient_id] = v;
-        }
-      });
-      setLiveVitals(prev => ({ ...latestByPatient, ...prev }));
 
-      if (role === 'ADMIN') {
-        try {
-          const sourceRes = await getVitalsSourceConfig();
-          setSourceConfig(sourceRes.data);
-        } catch {
-          setSourceConfig(null);
-        }
+      const [pRes, aRes, dRes, sRes, vRes] = results;
+
+      if (pRes.status === 'fulfilled') setPatients(pRes.value.data);
+      if (aRes.status === 'fulfilled') setAlerts(aRes.value.data);
+      if (dRes.status === 'fulfilled') setDoctors(dRes.value.data);
+      if (sRes.status === 'fulfilled') setStats(sRes.value.data);
+      
+      if (vRes.status === 'fulfilled') {
+        const latestByPatient = {};
+        (vRes.value.data || []).forEach(v => {
+          if (v?.patient_id != null && !latestByPatient[v.patient_id]) {
+            latestByPatient[v.patient_id] = v;
+          }
+        });
+        setLiveVitals(prev => ({ ...latestByPatient, ...prev }));
       }
 
-      // Notifications require auth — fetch separately so a 401 doesn't break everything
-      try {
-        const nRes = await getMyNotifications({ unread_only: false });
-        setNotifications(nRes.data);
-      } catch { /* auth may have expired */ }
+      if (role === 'ADMIN') {
+        getVitalsSourceConfig().then(res => setSourceConfig(res.data)).catch(() => setSourceConfig(null));
+      }
+
+      getMyNotifications({ unread_only: false }).then(res => setNotifications(res.data)).catch(() => {});
       setLastRefresh(new Date().toLocaleTimeString());
     } catch (err) {
       console.error('Dashboard fetch error:', err);
     } finally {
       setLoading(false);
     }
-  }, [doctorFilter]);
+  }, [doctorFilter, role]);
 
   useEffect(() => {
     fetchAll();
@@ -69,337 +65,252 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, [fetchAll]);
 
+  const patientsRef = React.useRef(patients);
+  useEffect(() => { patientsRef.current = patients; }, [patients]);
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
+    let ws = null;
+    let reconnectTimer = null;
+    let isMounted = true;
 
-    const ws = new WebSocket(buildVitalsWsUrl(token));
-
-    ws.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(event.data);
-        if (!Array.isArray(parsed)) return;
-        const next = {};
-        parsed.forEach((v) => {
-          if (v?.patient_id != null) {
-            next[v.patient_id] = v;
+    const connect = () => {
+      if (!isMounted) return;
+      ws = new WebSocket(buildVitalsWsUrl(token));
+      ws.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (!Array.isArray(parsed)) return;
+          const next = {};
+          parsed.forEach((v) => { if (v?.patient_id != null) next[v.patient_id] = v; });
+          if (Object.keys(next).length > 0) {
+            setLiveVitals(prev => ({ ...prev, ...next }));
+            setLastRefresh(new Date().toLocaleTimeString());
           }
-        });
-        if (Object.keys(next).length > 0) {
-          setLiveVitals(next);
-          setLastRefresh(new Date().toLocaleTimeString());
-        }
-      } catch {
-        // Ignore keepalive/invalid payloads.
-      }
+        } catch {}
+      };
+      ws.onclose = () => { if (isMounted) reconnectTimer = setTimeout(connect, 3000); };
+      ws.onerror = () => { if (ws.readyState === 1) ws.close(); };
     };
+    connect();
+    return () => { isMounted = false; clearTimeout(reconnectTimer); if (ws) ws.close(); };
+  }, [role]); // Only restart if role/session fundamentally changes
 
-    return () => {
-      try { ws.close(); } catch { /* no-op */ }
-    };
-  }, []);
+  const getStatus = (pId) => {
+    const v = liveVitals[pId];
+    if (!v) return 'new-admission';
+    
+    // Signal Loss Detection (5 minute threshold)
+    const ts = toLocal(v.timestamp);
+    if (ts && (new Date() - ts > 5 * 60 * 1000)) return 'signal-loss';
 
-  const unreadCount = notifications.filter(n => !n.is_read).length;
-
-  const handleMarkAllRead = async () => {
-    await markAllNotificationsRead();
-    fetchAll();
-  };
-
-  const handleMarkRead = async (id) => {
-    await markNotificationRead(id);
-    fetchAll();
-  };
-
-  const pendingAlerts   = alerts.filter(a => a.status === 'PENDING');
-  const escalatedAlerts = alerts.filter(a => a.status === 'ESCALATED');
-
-  const getStatus = (patientId) => {
-    const v = liveVitals[patientId];
-    if (!v) return 'no-data';
     if (v.spo2 < 90 || v.heart_rate > 110 || v.heart_rate < 50) return 'critical';
     if (v.temperature > 101 || v.temperature < 96) return 'warning';
     return 'normal';
   };
 
-  const statusCounts = patients.reduce((acc, p) => {
+  const counts = patients.reduce((acc, p) => {
     const s = getStatus(p.patient_id);
     acc[s] = (acc[s] || 0) + 1;
     return acc;
-  }, { critical: 0, warning: 0, normal: 0, 'no-data': 0 });
+  }, { critical: 0, warning: 0, normal: 0, 'new-admission': 0, 'signal-loss': 0 });
 
-  const totalForBars = Math.max(1, patients.length);
   const barSeries = [
-    { key: 'critical', label: 'Critical', value: statusCounts.critical, color: '#fb7185' },
-    { key: 'warning', label: 'Warning', value: statusCounts.warning, color: '#f59e0b' },
-    { key: 'normal', label: 'Stable', value: statusCounts.normal, color: '#22c55e' },
-    { key: 'no-data', label: 'No Data', value: statusCounts['no-data'], color: '#60a5fa' },
+    { key: 'critical',        label: 'Critical',      value: counts.critical,        color: '#f43f5e' },
+    { key: 'signal-loss',     label: 'Signal Loss',   value: counts['signal-loss'],  color: '#fbbf24' },
+    { key: 'warning',         label: 'Stable (Obs)',  value: counts.warning,         color: '#fcd34d' },
+    { key: 'normal',          label: 'Healthy',       value: counts.normal,          color: '#34d399' },
+    { key: 'new-admission',   label: 'Incoming',      value: counts['new-admission'],color: '#22d3ee' },
   ];
 
-  const totalAlerts = Math.max(1, alerts.length);
-  const ackAlerts = alerts.filter(a => a.status === 'ACKNOWLEDGED').length;
-  const pendingPct = Math.round((pendingAlerts.length / totalAlerts) * 100);
-  const escalatedPct = Math.round((escalatedAlerts.length / totalAlerts) * 100);
-  const ackPct = Math.max(0, 100 - pendingPct - escalatedPct);
-  const ringBg = {
-    background: `conic-gradient(#fb7185 0 ${escalatedPct}%, #f59e0b ${escalatedPct}% ${escalatedPct + pendingPct}%, #22c55e ${escalatedPct + pendingPct}% 100%)`,
+  const totalA = Math.max(1, alerts.length);
+  const pndA = alerts.filter(a => a.status === 'PENDING').length;
+  const escA = alerts.filter(a => a.status === 'ESCALATED').length;
+  const ackA = alerts.filter(a => a.status === 'ACKNOWLEDGED').length;
+  
+  const pndPct = Math.round((pndA / totalA) * 100);
+  const escPct = Math.round((escA / totalA) * 100);
+  const ackPct = Math.max(0, 100 - pndPct - escPct);
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const handleMarkAllRead = async () => {
+    try {
+      await markAllNotificationsRead();
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch {}
+  };
+
+  const handleMarkOneRead = async (id) => {
+    try {
+      await markNotificationRead(id);
+      setNotifications(prev => prev.map(n => n.notification_id === id ? { ...n, is_read: true } : n));
+    } catch {}
   };
 
   return (
-    <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div style={{ animation: 'reveal 0.5s ease-out' }}>
+      <div className="main-topbar">
         <div>
-          <h1>Dashboard</h1>
-          <p>
-            Real-time patient overview &nbsp;
+          <div className="main-title">Medical Command Center</div>
+          <div className="main-subtitle">
             <span className="live-tag">
               <span className="live-dot" />
               LIVE {lastRefresh && `· Updated ${lastRefresh}`}
             </span>
-          </p>
-        </div>
-        {/* Notification Bell */}
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={() => setShowNotifs(!showNotifs)}
-            style={{
-              background: unreadCount > 0 ? '#1e3a5f' : '#1e293b', border: '1px solid #334155',
-              color: '#e2e8f0', borderRadius: 10, padding: '8px 14px', cursor: 'pointer',
-              fontSize: 18, position: 'relative',
-            }}>
-            🔔
-            {unreadCount > 0 && (
-              <span style={{
-                position: 'absolute', top: -4, right: -4, background: '#ef4444',
-                color: '#fff', borderRadius: '50%', width: 20, height: 20,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 11, fontWeight: 700,
-              }}>{unreadCount}</span>
+            {sourceConfig && (
+              <span style={{ marginLeft: 12, fontSize: 10, color: sourceConfig.source === 'thingspeak' ? '#22d3ee' : '#34d399', fontWeight: 800 }}>
+                {sourceConfig.source === 'thingspeak' ? '📡 IOT HARDWARE' : '🎲 SIMULATED'}
+              </span>
             )}
-          </button>
-          {showNotifs && (
-            <div style={{
-              position: 'absolute', top: 44, right: 0, width: 380, maxHeight: 400,
-              background: '#1e293b', border: '1px solid #334155', borderRadius: 12,
-              boxShadow: '0 15px 40px rgba(0,0,0,.4)', zIndex: 100, overflow: 'auto',
-            }}>
-              <div style={{ padding: '12px 16px', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <strong style={{ color: '#e2e8f0', fontSize: 14 }}>🔔 Notifications</strong>
-                {unreadCount > 0 && (
-                  <button onClick={handleMarkAllRead} style={{
-                    background: '#3b82f6', border: 'none', color: '#fff', borderRadius: 6,
-                    padding: '4px 10px', fontSize: 11, cursor: 'pointer',
-                  }}>Mark all read</button>
-                )}
-              </div>
-              {notifications.length === 0 ? (
-                <div style={{ padding: 20, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
-                  No notifications yet
-                </div>
-              ) : (
-                notifications.slice(0, 20).map(n => (
-                  <div key={n.notification_id}
-                    onClick={() => !n.is_read && handleMarkRead(n.notification_id)}
-                    style={{
-                      padding: '10px 16px', borderBottom: '1px solid #0f172a',
-                      background: n.is_read ? 'transparent' : 'rgba(59,130,246,0.08)',
-                      cursor: n.is_read ? 'default' : 'pointer',
-                    }}>
-                    <div style={{ color: '#e2e8f0', fontSize: 12 }}>{n.message}</div>
-                    <div style={{ color: '#64748b', fontSize: 10, marginTop: 4 }}>
-                      {n.created_at ? toLocal(n.created_at).toLocaleString() : ''}
-                      {!n.is_read && <span style={{ color: '#3b82f6', marginLeft: 8 }}>● new</span>}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
+          </div>
+        </div>
+        <div className="topbar-actions" style={{ position: 'relative' }}>
+           <button
+             className="btn"
+             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--stroke)', padding: '8px 12px', position: 'relative', fontSize: 18 }}
+             onClick={() => setShowNotifs(!showNotifs)}
+             title="System Notifications"
+           >
+             🔔
+             {unreadCount > 0 && (
+               <span style={{
+                 position: 'absolute', top: -4, right: -4, background: 'var(--danger)',
+                 color: '#fff', borderRadius: '50%', width: 18, height: 18,
+                 fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                 boxShadow: '0 0 10px var(--danger-glow)'
+               }}>
+                 {unreadCount}
+               </span>
+             )}
+           </button>
+
+           {showNotifs && (
+             <div className="card" style={{
+               position: 'absolute', top: 50, right: 0, width: 320, zIndex: 100,
+               maxHeight: 400, overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
+             }}>
+               <div className="card-header" style={{ padding: '12px 20px' }}>
+                 <h3 style={{ fontSize: 12, margin: 0 }}>NOTIFICATIONS</h3>
+                 {unreadCount > 0 && (
+                   <button onClick={handleMarkAllRead} style={{ background:'none', border:'none', color:'var(--primary)', fontSize:10, fontWeight:800, cursor:'pointer' }}>MARK ALL READ</button>
+                 )}
+               </div>
+               {notifications.length === 0 ? (
+                 <div style={{ padding: 20, textAlign: 'center', color: '#64748b', fontSize: 12 }}>No system notifications.</div>
+               ) : (
+                 notifications.map(n => (
+                   <div key={n.notification_id} onClick={() => handleMarkOneRead(n.notification_id)} style={{
+                     padding: '12px 20px', borderBottom: '1px solid var(--stroke)',
+                     background: n.is_read ? 'transparent' : 'rgba(34, 211, 238, 0.05)',
+                     cursor: 'pointer', transition: 'background 0.2s'
+                   }}>
+                     <div style={{ fontSize: 12, color: n.is_read ? '#94a3b8' : '#f1f5f9', fontWeight: n.is_read ? 400 : 700 }}>{n.message}</div>
+                     <div style={{ fontSize: 9, color: '#64748b', marginTop: 4 }}>{n.created_at ? toLocal(n.created_at).toLocaleTimeString() : ''}</div>
+                   </div>
+                 ))
+               )}
+             </div>
+           )}
+
+           <button className="btn btn-primary btn-sm" onClick={fetchAll}>Refresh Data</button>
         </div>
       </div>
 
-      <div className="graphic-banner">
-        <div className="banner-title">Live Care Operations Pulse</div>
-        <div className="banner-subtitle">Track admissions, deteriorations, and response posture from one place.</div>
-        <div className="chip-row">
-          <span className="status-chip">Realtime Streaming</span>
-          <span className="status-chip">Alert Correlation</span>
-          <span className="status-chip">Role-aware Triage</span>
-        </div>
-      </div>
-
-      {/* Doctor filter */}
-      <div className="filter-row">
-        <select
-          style={{ background:'#1e293b', border:'1px solid #334155', color:'#e2e8f0',
-                   borderRadius:8, padding:'8px 12px', fontSize:13 }}
-          value={doctorFilter}
-          onChange={e => setDoctorFilter(e.target.value)}
-        >
-          <option value="">All Doctors</option>
-          {doctors.map(d => <option key={d.doctor_id} value={d.doctor_id}>{d.name} ({d.specialization || 'N/A'})</option>)}
-        </select>
-        <button className="btn btn-primary btn-sm" onClick={fetchAll}>⟳ Refresh</button>
-      </div>
-
-      {/* Stats */}
       <div className="stats-grid">
-        <div className="stat-card blue">
-          <div className="label">Patients</div>
-          <div className="value">{stats?.total_patients ?? patients.length}</div>
-        </div>
-        <div className="stat-card" style={{ background:'linear-gradient(135deg,#1e3a5f,#1e40af)' }}>
-          <div className="label">Doctors</div>
-          <div className="value">{stats?.total_doctors ?? doctors.length}</div>
+        <div className="stat-card">
+          <div className="label">Total Patients</div>
+          <div className="value">{patients.length}</div>
         </div>
         <div className="stat-card red">
-          <div className="label">Pending Alerts</div>
-          <div className="value">{stats?.pending_alerts ?? pendingAlerts.length}</div>
+          <div className="label">Critical Issues</div>
+          <div className="value">{counts.critical}</div>
         </div>
         <div className="stat-card amber">
-          <div className="label">Escalated</div>
-          <div className="value">{stats?.escalated_alerts ?? escalatedAlerts.length}</div>
-        </div>
-        <div className="stat-card green">
-          <div className="label">Stable</div>
+          <div className="label">Avg Triage Time</div>
           <div className="value">
-            {patients.filter(p => getStatus(p.patient_id) === 'normal').length}
+            {stats?.avg_response_time_seconds ? (stats.avg_response_time_seconds < 60 ? `${Math.round(stats.avg_response_time_seconds)}s` : `${Math.round(stats.avg_response_time_seconds/60)}m`) : '—'}
           </div>
         </div>
-        <div className="stat-card" style={{ background:'linear-gradient(135deg,#4c1d95,#6d28d9)' }}>
-          <div className="label">Duplicate Vitals</div>
-          <div className="value">
-            {sourceConfig?.source === 'fake' ? '—' : (stats?.duplicate_vitals_count ?? 0)}
-          </div>
-          {sourceConfig?.source === 'fake' && (
-            <div style={{ color:'#c4b5fd', fontSize:11 }}>N/A in fake source mode</div>
-          )}
-        </div>
-        <div className="stat-card" style={{ background:'linear-gradient(135deg,#065f46,#047857)' }}>
-          <div className="label">Acknowledged</div>
-          <div className="value">{stats?.acknowledged_alerts ?? 0}</div>
-        </div>
-      </div>
-
-      <div className="graph-grid">
-        <div className="graph-card">
-          <div className="graph-title">3D Patient Load Prism</div>
-          <div className="graph-subtitle">Live distribution of clinical stability by patient status.</div>
-          <div className="bar3d-wrap">
-            {barSeries.map((s, i) => {
-              const h = Math.max(14, Math.round((s.value / totalForBars) * 120));
-              return (
-                <div className="bar3d-col" key={s.key}>
-                  <div
-                    className="bar3d"
-                    style={{
-                      '--bar-color': s.color,
-                      height: `${h}px`,
-                      background: `linear-gradient(180deg, ${s.color}, rgba(6,18,28,.9))`,
-                      animationDelay: `${i * 0.08}s`,
-                    }}
-                  >
-                    <span style={{ display: 'none' }} />
-                  </div>
-                  <div className="bar3d-label">{s.label}</div>
-                  <div className="bar3d-value">{s.value}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="graph-card">
-          <div className="graph-title">3D Alert Wave Ring</div>
-          <div className="graph-subtitle">Escalated vs pending vs acknowledged response state.</div>
-          <div className="ring3d-shell" style={ringBg}>
-            <div className="ring3d-center">Alerts<span>{alerts.length}</span></div>
-          </div>
-          <div className="graph-legend">
-            <span className="graph-legend-item"><span className="graph-dot" style={{ background: '#fb7185' }} />Escalated {escalatedPct}%</span>
-            <span className="graph-legend-item"><span className="graph-dot" style={{ background: '#f59e0b' }} />Pending {pendingPct}%</span>
-            <span className="graph-legend-item"><span className="graph-dot" style={{ background: '#22c55e' }} />Ack {ackPct}%</span>
+        <div className="stat-card red">
+          <div className="label">SLA Breaches</div>
+          <div className="value" style={{ color: (stats?.sla_breach_count > 0) ? '#f43f5e' : 'inherit' }}>
+            {stats?.sla_breach_count ?? 0}
           </div>
         </div>
       </div>
 
-      {/* Patient vitals grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, marginBottom: 24 }}>
+        <div className="card">
+          <div className="card-header"><h2>Stability Index</h2></div>
+          <div style={{ padding: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {barSeries.map(s => (
+              <div key={s.key} style={{ padding: 12, borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: `1px solid ${s.color}22` }}>
+                <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 800 }}>{s.label}</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: s.color, marginTop: 2 }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-header"><h2>Alert Response</h2></div>
+          <div style={{ padding: 20 }}>
+            <div style={{ height: 12, width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: 6, overflow: 'hidden', display: 'flex' }}>
+              <div style={{ width: `${escPct}%`, background: '#f43f5e' }} />
+              <div style={{ width: `${pndPct}%`, background: '#fbbf24' }} />
+              <div style={{ width: `${ackPct}%`, background: '#34d399' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
+               <div style={{ textAlign:'center' }}><div style={{color:'#f43f5e', fontWeight:800}}>{escPct}%</div><div style={{fontSize:9, color:'#64748b'}}>ESC</div></div>
+               <div style={{ textAlign:'center' }}><div style={{color:'#fbbf24', fontWeight:800}}>{pndPct}%</div><div style={{fontSize:9, color:'#64748b'}}>PND</div></div>
+               <div style={{ textAlign:'center' }}><div style={{color:'#34d399', fontWeight:800}}>{ackPct}%</div><div style={{fontSize:9, color:'#64748b'}}>ACK</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="card">
-        <div className="card-header">
-          <h2>Live Patient Vitals</h2>
-        </div>
+        <div className="card-header"><h2>Live Vitals Telemetry</h2></div>
         {loading ? <div className="spinner" /> : (
-          <table>
-            <thead>
-              <tr>
-                <th>Patient</th><th>Room</th><th>Hospital</th><th>Doctor</th><th>Nurse</th>
-                <th>Heart Rate</th><th>SpO₂</th><th>Temp (°F)</th><th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {patients.length === 0 && (
-                <tr><td colSpan={9} className="empty-state">No patients yet. Add patients first.</td></tr>
-              )}
-              {patients.map(p => {
-                const v = liveVitals[p.patient_id];
-                const status = getStatus(p.patient_id);
-                return (
-                  <tr key={p.patient_id}
-                    className={status === 'critical' ? 'vital-critical' : status === 'warning' ? 'vital-warning' : ''}>
-                    <td><strong>{p.name}</strong></td>
-                    <td>{p.room_number}</td>
-                    <td>{p.hospital_name || '—'}</td>
-                    <td>{p.doctor_name || '—'}</td>
-                    <td>{p.nurse_name  || '—'}</td>
-                    <td>{v ? `${v.heart_rate} bpm` : '—'}</td>
-                    <td>{v ? `${v.spo2}%` : '—'}</td>
-                    <td>{v ? `${v.temperature}°F` : '—'}</td>
-                    <td>
-                      {status === 'critical' && <span className="badge badge-red">Critical</span>}
-                      {status === 'warning'  && <span className="badge badge-amber">Warning</span>}
-                      {status === 'normal'   && <span className="badge badge-green">Stable</span>}
-                      {status === 'no-data'  && <span className="badge badge-blue">No Data</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Recent Alerts */}
-      <div className="card">
-        <div className="card-header">
-          <h2>🚨 Active Alerts (Pending & Escalated)</h2>
-        </div>
-        <table>
-          <thead>
-            <tr><th>Alert ID</th><th>Patient</th><th>Type</th><th>Status</th><th>Time</th></tr>
-          </thead>
-          <tbody>
-            {[...pendingAlerts, ...escalatedAlerts].length === 0 && (
-              <tr><td colSpan={5} className="empty-state">No active alerts 🎉</td></tr>
-            )}
-            {[...pendingAlerts, ...escalatedAlerts].slice(0, 15).map(a => {
-              const pName = patients.find(p => p.patient_id === a.patient_id)?.name || `Patient ${a.patient_id}`;
-              return (
-                <tr key={a.alert_id}>
-                  <td>#{a.alert_id}</td>
-                  <td>{pName}</td>
-                  <td><span className={`badge ${a.alert_type.includes('HEART') || a.alert_type.includes('SPO2') ? 'badge-red' : 'badge-amber'}`}>{a.alert_type}</span></td>
-                  <td>
-                    {a.status === 'ESCALATED'
-                      ? <span className="badge badge-red">⬆ ESCALATED</span>
-                      : <span className="badge badge-amber">PENDING</span>
-                    }
-                  </td>
-                  <td>{a.created_at ? toLocal(a.created_at).toLocaleTimeString() : '—'}</td>
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Patient</th><th>Room</th><th>Doctor</th><th>Heart Rate</th><th>SpO₂</th><th>Temp</th><th>Status</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {patients.map(p => {
+                  const v = liveVitals[p.patient_id];
+                  const s = getStatus(p.patient_id);
+                  return (
+                    <tr key={p.patient_id}>
+                      <td><strong>{p.name}</strong></td>
+                      <td>{p.room_number}</td>
+                      <td>{p.doctor_name || '—'}</td>
+                      <td style={{color: s === 'critical' && v?.heart_rate > 110 ? '#f43f5e' : 'inherit'}}>{v ? `${v.heart_rate} bpm` : '—'}</td>
+                      <td style={{color: s === 'critical' && v?.spo2 < 90 ? '#f43f5e' : 'inherit'}}>{v ? `${v.spo2}%` : '—'}</td>
+                      <td>{v ? `${v.temperature}°F` : '—'}</td>
+                      <td>
+                        <span className={`badge ${
+                          s === 'critical' ? 'badge-red' : 
+                          s === 'signal-loss' ? 'badge-amber' : 
+                          s === 'new-admission' ? 'badge-blue' : 
+                          s === 'warning' ? 'badge-amber' : 'badge-green'
+                        }`}>
+                          {s === 'signal-loss' ? 'SIGNAL LOSS' : 
+                           s === 'new-admission' ? 'NEW ADMIT' : 
+                           s.toUpperCase()}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

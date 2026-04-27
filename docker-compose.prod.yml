@@ -21,6 +21,7 @@ services:
       REDIS_REQUIRED: "true"
       # Force explicit CORS in production.
       CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS in .env for production}
+      WHATSAPP_WEBHOOK_SECRET: ${WHATSAPP_WEBHOOK_SECRET:?Set WHATSAPP_WEBHOOK_SECRET in .env for production}
     cap_drop:
       - ALL
     security_opt:

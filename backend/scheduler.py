@@ -20,7 +20,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-INTERVAL_SECONDS = 10
+INTERVAL_SECONDS = 5
 ESCALATION_MINUTES = 2
 FAKE_VITALS_ENABLED_SETTING_KEY = "fake_vitals_generation_enabled"
 
@@ -62,46 +62,59 @@ def run():
     while True:
         db = SessionLocal()
         try:
-            setting = db.query(models.AppSetting).filter(models.AppSetting.setting_key == FAKE_VITALS_ENABLED_SETTING_KEY).first()
-            enabled = True if not setting else str(setting.setting_value or "").strip().lower() in {"1", "true", "yes", "on"}
-            if enabled != last_enabled:
-                logging.info("Fake vitals generation is now %s", "ENABLED" if enabled else "DISABLED")
-                last_enabled = enabled
-            if not enabled:
-                continue
-
             current_source = data_sources.get_data_source_config()["source"]
             if current_source != last_source:
                 logging.info("Vitals source switched to: %s", current_source)
                 last_source = current_source
+
+            setting = db.query(models.AppSetting).filter(models.AppSetting.setting_key == FAKE_VITALS_ENABLED_SETTING_KEY).first()
+            fake_enabled = True if not setting else str(setting.setting_value or "").strip().lower() in {"1", "true", "yes", "on"}
+            
+            if fake_enabled != last_enabled:
+                logging.info("Fake vitals generation is now %s", "ENABLED" if fake_enabled else "DISABLED")
+                last_enabled = fake_enabled
+
+            # Only pause the loop if we are in fake mode AND fake mode is disabled.
+            # If we are in thingspeak mode, we MUST keep polling hardware.
+            if current_source == "fake" and not fake_enabled:
+                time.sleep(INTERVAL_SECONDS)
+                continue
 
             patients = db.query(models.Patient).all()
             if not patients:
                 logging.warning("No patients found in DB.  Waiting…")
 
             # ── Generate vitals from active data source ──────────────────
+            active_source = data_sources.get_source()
             vitals_snapshot = []
             for p in patients:
-                vital, alerts = fake_generator.save_fake(db, p.patient_id)
-                alert_str = ", ".join(alerts) if alerts else "—"
-                logging.info(
-                    "Patient %-3s | HR=%3d  SpO2=%3d%%  Temp=%.1f°F | Alerts: %s",
-                    p.patient_id,
-                    vital.heart_rate,
-                    vital.spo2,
-                    vital.temperature,
-                    alert_str,
-                )
-                vitals_snapshot.append({
-                    "patient_id": p.patient_id,
-                    "name": p.name,
-                    "room": p.room_number,
-                    "heart_rate": vital.heart_rate,
-                    "spo2": vital.spo2,
-                    "temperature": vital.temperature,
-                    "timestamp": str(vital.timestamp),
-                    "alerts": alerts,
-                })
+                try:
+                    # One-time backfill if DB is empty for this source
+                    fake_generator.backfill_history(db, p.patient_id, source=active_source)
+                    
+                    vital, alerts = fake_generator.save_fake(db, p.patient_id, source=active_source)
+                    alert_str = ", ".join(alerts) if alerts else "—"
+                    logging.info(
+                        "Patient %-3s | HR=%3d  SpO2=%3d%%  Temp=%.1f°F | Alerts: %s",
+                        p.patient_id,
+                        vital.heart_rate,
+                        vital.spo2,
+                        vital.temperature,
+                        alert_str,
+                    )
+                    vitals_snapshot.append({
+                        "patient_id": p.patient_id,
+                        "name": p.name,
+                        "room": p.room_number,
+                        "heart_rate": vital.heart_rate,
+                        "spo2": vital.spo2,
+                        "temperature": vital.temperature,
+                        "timestamp": str(vital.timestamp),
+                        "alerts": alerts,
+                    })
+                except Exception as e:
+                    logging.warning("Skipping patient %d due to processing error (likely deleted): %s", p.patient_id, e)
+                    db.rollback() # Ensure session remains clean for next patient
 
             # ── Publish to Redis for WebSocket live push ─────────────────
             if vitals_snapshot:
@@ -119,7 +132,10 @@ def run():
         except Exception as exc:
             logging.error("Scheduler error: %s", exc)
         finally:
-            db.close()
+            try:
+                db.close()
+            except Exception as exc:
+                logging.warning("DB session close failed (continuing): %s", exc)
 
         time.sleep(INTERVAL_SECONDS)
 
