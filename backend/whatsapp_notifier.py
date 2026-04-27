@@ -392,10 +392,12 @@ def send_whatsapp_message(phone: str, body: str, retries: int = 3,
     # Determine endpoint and payload based on buttons
     chat_id = _phone_to_chat_id(phone)
     if buttons:
-        method = "sendButtons"
+        # v5.2: Use 2026 GREEN-API Interactive Reply specification
+        method = "sendInteractiveButtonsReply"
         payload = {
             "chatId": chat_id,
-            "message": body,
+            "body": body,
+            "footer": "Medical Monitoring System",
             "buttons": buttons
         }
     else:
@@ -540,8 +542,7 @@ def send_alert_notification(
     if alert_id:
         buttons.append({
             "buttonId": f"ACK {alert_id}",
-            "buttonText": {"displayText": "✅ Acknowledge Alert"},
-            "type": 1
+            "buttonText": "✅ Acknowledge"
         })
 
     results = {"enabled": True, "sent": 0, "failed": 0, "details": []}
@@ -614,8 +615,7 @@ def send_escalation_notification(
     if alert_id:
         buttons.append({
             "buttonId": f"ACK {alert_id}",
-            "buttonText": {"displayText": "🚨 Resolve Escalation"},
-            "type": 1
+            "buttonText": "🚨 Resolve"
         })
 
     results = {"enabled": True, "sent": 0, "failed": 0, "details": []}
@@ -659,8 +659,7 @@ def send_test_message(phone: str = None) -> dict:
     buttons = [
         {
             "buttonId": "TEST_ACK",
-            "buttonText": {"displayText": "🧪 Verify Handshake"},
-            "type": 1
+            "buttonText": "🧪 Verify Handshake"
         }
     ]
 
