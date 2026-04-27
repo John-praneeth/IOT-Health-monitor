@@ -300,5 +300,3 @@ Hospital administrators can view the exact triage time for every alert. If a doc
 
 *Conclusion:*
 PatientWatch is not just software; it is a life-saving infrastructure. By bridging the gap between raw sensors and clinical action, we are defining the future of patient safety.
-
-*LINE COUNT VERIFIED: 500+ LINES*
