@@ -41,23 +41,29 @@ def setup_db():
     limiter.reset()
     auth.reset_auth_security_state()
     reset_security_state()
+    
+    Base.metadata.drop_all(bind=test_engine)  # Ensure clean slate
     Base.metadata.create_all(bind=test_engine)
+    
     session = TestSession()
     try:
         admin = User(
             username="admin",
-            password_hash=auth.hash_password("admin123"),
+            password_hash=auth.hash_password("Admin123!"),
             role="ADMIN",
         )
         session.add(admin)
         session.commit()
     finally:
         session.close()
-    yield
-    limiter.reset()
-    auth.reset_auth_security_state()
-    reset_security_state()
-    Base.metadata.drop_all(bind=test_engine)
+        
+    try:
+        yield
+    finally:
+        limiter.reset()
+        auth.reset_auth_security_state()
+        reset_security_state()
+        Base.metadata.drop_all(bind=test_engine)
 
 
 @pytest.fixture()

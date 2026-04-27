@@ -65,6 +65,7 @@ services:
       WHATSAPP_ENABLED: "true"
       GREEN_API_ID: ${GREEN_API_ID:-}
       GREEN_API_TOKEN: ${GREEN_API_TOKEN:-}
+      WHATSAPP_WEBHOOK_SECRET: ${WHATSAPP_WEBHOOK_SECRET:-}
       WHATSAPP_RECIPIENTS: ""
       # v5.2 new env vars
       WS_BROADCAST_MODE: "event"
@@ -113,7 +114,7 @@ services:
     ports:
       - "80:80"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost/ >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/ >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 5

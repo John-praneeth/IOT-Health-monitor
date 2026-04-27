@@ -3,6 +3,7 @@ main.py  –  FastAPI backend for IoT Healthcare Patient Monitor v5.2.
 """
 
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -95,10 +96,13 @@ WS_MESSAGES_PER_MINUTE = int(os.getenv("WS_MESSAGES_PER_MINUTE", "120"))
 WS_MESSAGES_PER_SECOND = int(os.getenv("WS_MESSAGES_PER_SECOND", "10"))
 WS_BROADCAST_MODE = os.getenv("WS_BROADCAST_MODE", "event")  # "event" (incremental) or "full"
 WS_REDIS_CHANNEL = "iot:vitals"
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
 ALLOW_ADMIN_ALERT_ACK = os.getenv("ALLOW_ADMIN_ALERT_ACK", "false").lower() in ("1", "true", "yes")
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+MAX_PAGE_SIZE = 500
 FORGOT_PASSWORD_CODE_TTL_MINUTES = int(os.getenv("FORGOT_PASSWORD_CODE_TTL_MINUTES", "10"))
 FAKE_VITALS_ENABLED_SETTING_KEY = "fake_vitals_generation_enabled"
+WHATSAPP_WEBHOOK_SECRET = os.getenv("WHATSAPP_WEBHOOK_SECRET", "")
 
 # ── Basic Prometheus-compatible metrics (no external dependency) ─────────────
 APP_STARTED_AT = time.time()
@@ -106,17 +110,30 @@ HTTP_REQUESTS_TOTAL = 0
 HTTP_REQUEST_ERRORS_TOTAL = 0
 HTTP_REQUEST_DURATION_SECONDS_SUM = 0.0
 _redis_subscriber_started = False
+import threading
+import scheduler
+
 _redis_subscriber_task: Optional[asyncio.Task] = None
 
 
 @asynccontextmanager
 async def app_lifespan(_app: FastAPI):
-    """Manage background subscriber lifecycle without deprecated startup hooks."""
+    """Manage background subscriber lifecycle and polling scheduler."""
     global _redis_subscriber_started, _redis_subscriber_task
     if not _redis_subscriber_started and is_redis_available():
         _redis_subscriber_task = asyncio.create_task(_redis_vitals_subscriber())
         _redis_subscriber_started = True
         logger.info("Redis pub/sub WebSocket subscriber started (v5.2 event-driven)")
+        
+    # Start the polling scheduler automatically in the background
+    import sys
+    if "pytest" not in sys.modules:
+        scheduler_thread = threading.Thread(target=scheduler.run, daemon=True)
+        scheduler_thread.start()
+        logger.info("Background polling scheduler automatically started inside the main process.")
+    else:
+        logger.info("Skipping background scheduler start during tests.")
+    
     try:
         yield
     finally:
@@ -142,7 +159,24 @@ setup_rate_limiter(app)
 setup_exception_handlers(app)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
-origins = os.getenv("CORS_ORIGINS", "http://localhost,http://localhost:3000,http://localhost:5173").split(",")
+origins_env = os.getenv("CORS_ORIGINS", "")
+origins = [o.strip() for o in origins_env.split(",") if o.strip()]
+
+# Essential production & development origins
+mandatory_origins = [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://iot-healthcare.vercel.app",
+    "https://iot-healthcare.vercel.app/",
+    "https://iot-healthcare-backend.onrender.com",
+    "https://iot-healthcare-backend.onrender.com/",
+]
+
+for mo in mandatory_origins:
+    if mo not in origins:
+        origins.append(mo)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -217,15 +251,20 @@ def _set_refresh_cookie(response: Response, refresh_token: str):
         key=auth.REFRESH_COOKIE_NAME,
         value=refresh_token,
         httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="lax",
+        secure=True if IS_PRODUCTION else COOKIE_SECURE,
+        samesite="none" if IS_PRODUCTION else "lax",
         max_age=auth.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         path="/",
     )
 
 
 def _clear_refresh_cookie(response: Response):
-    response.delete_cookie(key=auth.REFRESH_COOKIE_NAME, path="/")
+    response.delete_cookie(
+        key=auth.REFRESH_COOKIE_NAME,
+        path="/",
+        secure=True if IS_PRODUCTION else COOKIE_SECURE,
+        samesite="none" if IS_PRODUCTION else "lax",
+    )
 
 
 def _setting_bool(db: Session, key: str, default: bool = False) -> bool:
@@ -261,9 +300,9 @@ def filter_response_by_role(current_user: models.User, data):
             "doctor_name": getattr(item, "doctor_name", None),
             "nurse_name": getattr(item, "nurse_name", None),
             "hospital_name": getattr(item, "hospital_name", None),
-            "hospital_id": None,
-            "assigned_doctor": None,
-            "assigned_nurse": None,
+            "hospital_id": item.hospital_id,
+            "assigned_doctor": item.assigned_doctor,
+            "assigned_nurse": item.assigned_nurse,
         }
         return d
 
@@ -467,25 +506,28 @@ def login(body: schemas.LoginRequest, request: Request, response: Response, db: 
     logger.info("User logged in: %s (role: %s)", user.username, user.role,
                 extra={"action": "login_success"})
 
-    total = stage_marks["audit_write"] - t0
-    if total >= 1.5:
-        logger.warning(
-            "Slow login detected for user=%s ip=%s total=%.3fs timings=%s",
-            body.username,
-            client_ip,
-            total,
-            {
-                "ip_check": round(stage_marks["ip_block_check"] - stage_marks["client_ip"], 3),
-                "user_lookup": round(stage_marks["user_lookup"] - stage_marks["ip_block_check"], 3),
-                "password_verify": round(stage_marks["password_verify"] - stage_marks["user_lookup"], 3),
-                "failed_reset": round(stage_marks["failed_login_reset"] - stage_marks["password_verify"], 3),
-                "issue_tokens": round(stage_marks["issue_token_pair"] - stage_marks["failed_login_reset"], 3),
-                "decode_tokens": round(stage_marks["decode_tokens"] - stage_marks["issue_token_pair"], 3),
-                "bind_refresh": round(stage_marks["bind_refresh"] - stage_marks["decode_tokens"], 3),
-                "revoke_old": round(stage_marks["revoke_old_tokens"] - stage_marks["bind_refresh"], 3),
-                "audit_write": round(stage_marks["audit_write"] - stage_marks["revoke_old_tokens"], 3),
-            },
-        )
+    # Record timing metrics safely
+    audit_time = stage_marks.get("audit_write")
+    if audit_time:
+        total = audit_time - t0
+        if total >= 1.5:
+            logger.warning(
+                "Slow login detected for user=%s ip=%s total=%.3fs timings=%s",
+                body.username,
+                client_ip,
+                total,
+                {
+                    "ip_check": round(stage_marks.get("ip_block_check", 0) - stage_marks.get("client_ip", 0), 3),
+                    "user_lookup": round(stage_marks.get("user_lookup", 0) - stage_marks.get("ip_block_check", 0), 3),
+                    "password_verify": round(stage_marks.get("password_verify", 0) - stage_marks.get("user_lookup", 0), 3),
+                    "failed_reset": round(stage_marks.get("failed_login_reset", 0) - stage_marks.get("password_verify", 0), 3),
+                    "issue_tokens": round(stage_marks.get("issue_token_pair", 0) - stage_marks.get("failed_login_reset", 0), 3),
+                    "decode_tokens": round(stage_marks.get("decode_tokens", 0) - stage_marks.get("issue_token_pair", 0), 3),
+                    "bind_refresh": round(stage_marks.get("bind_refresh", 0) - stage_marks.get("decode_tokens", 0), 3),
+                    "revoke_old": round(stage_marks.get("revoke_old_tokens", 0) - stage_marks.get("bind_refresh", 0), 3),
+                    "audit_write": round(stage_marks.get("audit_write", 0) - stage_marks.get("revoke_old_tokens", 0), 3),
+                },
+            )
 
     return schemas.TokenResponse(
         access_token=token, role=user.role, username=user.username,
@@ -599,7 +641,17 @@ def forgot_password_confirm(
         .order_by(models.PasswordResetToken.created_at.desc())
         .first()
     )
-    if not token_row or not auth.verify_password(body.verification_code, token_row.code_hash):
+    if not token_row:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+
+    if token_row.failed_attempts >= 5:
+        token_row.used = True
+        db.commit()
+        raise HTTPException(status_code=400, detail="Too many failed attempts. Please request a new code.")
+
+    if not auth.verify_password(body.verification_code, token_row.code_hash):
+        token_row.failed_attempts += 1
+        db.commit()
         raise HTTPException(status_code=400, detail="Invalid or expired verification code")
 
     token_row.used = True
@@ -730,7 +782,35 @@ def create_hospital(
     current_user: models.User = Depends(auth.require_role("ADMIN")),
     db: Session = Depends(get_db),
 ):
-    return crud.create_hospital(db, hospital)
+    return crud.create_hospital(db, hospital, user_id=current_user.user_id)
+
+
+@app.get("/hospitals/{hospital_id}", response_model=schemas.HospitalOut, tags=["Hospitals"])
+
+def update_hospital(
+    hospital_id: int,
+    payload: schemas.HospitalUpdate,
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
+):
+    updated = crud.update_hospital(db, hospital_id, payload, user_id=current_user.user_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Hospital not found")
+    return updated
+
+
+@app.delete("/hospitals/{hospital_id}", tags=["Hospitals"],
+             summary="Delete medical center",
+             description="Permanently removes the hospital record and unassigns staff/patients.")
+def delete_hospital(
+    hospital_id: int,
+    current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
+):
+    h = crud.delete_hospital(db, hospital_id, user_id=current_user.user_id)
+    if not h:
+        raise HTTPException(status_code=404, detail="Hospital not found")
+    return {"detail": "Hospital deleted successfully"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -740,10 +820,13 @@ def create_hospital(
 def list_doctors(
     hospital_id: Optional[int] = None,
     specialization: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    return crud.get_doctors(db, hospital_id=hospital_id, specialization=specialization)
+    limit = min(limit, MAX_PAGE_SIZE)
+    return crud.get_doctors(db, hospital_id=hospital_id, specialization=specialization, limit=limit, offset=offset)
 
 
 @app.post("/doctors", response_model=schemas.DoctorOut, tags=["Doctors"])
@@ -784,6 +867,15 @@ def update_doctor(
         raise HTTPException(status_code=403, detail="Not authorized to update doctor")
     if current_user.role == "DOCTOR" and current_user.doctor_id != doctor_id:
         raise HTTPException(status_code=403, detail="Not authorized to update doctor")
+    
+    # Critical Metadata Protection: Only ADMIN can change hospital_id or freelancer status
+    if current_user.role != "ADMIN":
+        existing = crud.get_doctor(db, doctor_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Doctor not found")
+        payload.hospital_id = existing.hospital_id
+        payload.is_freelancer = existing.is_freelancer
+
     d = crud.update_doctor(db, doctor_id, payload, user_id=current_user.user_id)
     if not d:
         raise HTTPException(status_code=404, detail="Doctor not found")
@@ -824,10 +916,13 @@ def list_doctor_patients(
 @app.get("/nurses", response_model=List[schemas.NurseOut], tags=["Nurses"])
 def list_nurses(
     hospital_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
-    return crud.get_nurses(db, hospital_id=hospital_id)
+    limit = min(limit, MAX_PAGE_SIZE)
+    return crud.get_nurses(db, hospital_id=hospital_id, limit=limit, offset=offset)
 
 
 @app.post("/nurses", response_model=schemas.NurseOut, tags=["Nurses"])
@@ -867,6 +962,14 @@ def update_nurse(
         raise HTTPException(status_code=403, detail="Not authorized to update nurse")
     if current_user.role == "NURSE" and current_user.nurse_id != nurse_id:
         raise HTTPException(status_code=403, detail="Not authorized to update nurse")
+    
+    # Critical Metadata Protection: Only ADMIN can change hospital_id
+    if current_user.role != "ADMIN":
+        existing = crud.get_nurse(db, nurse_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Nurse not found")
+        payload.hospital_id = existing.hospital_id
+
     n = crud.update_nurse(db, nurse_id, payload, user_id=current_user.user_id)
     if not n:
         raise HTTPException(status_code=404, detail="Nurse not found")
@@ -908,19 +1011,22 @@ def list_nurse_patients(
 def list_patients(
     doctor_id: Optional[int] = None,
     nurse_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
+    limit = min(limit, MAX_PAGE_SIZE)
     if current_user.role == "DOCTOR":
         if not current_user.doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these patients")
         if doctor_id and doctor_id != current_user.doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these patients")
         if doctor_id == current_user.doctor_id:
-            patients = crud.get_patients(db, doctor_id=current_user.doctor_id)
+            patients = crud.get_patients(db, doctor_id=current_user.doctor_id, limit=limit, offset=offset)
         else:
             allowed_ids = _allowed_patient_ids_for_user(db, current_user)
-            patients = crud.get_patients(db, patient_ids=list(allowed_ids or []))
+            patients = crud.get_patients(db, patient_ids=list(allowed_ids or []), limit=limit, offset=offset)
         return filter_response_by_role(current_user, patients)
     elif current_user.role == "NURSE":
         if not current_user.nurse_id:
@@ -930,12 +1036,12 @@ def list_patients(
         if doctor_id:
             raise HTTPException(status_code=403, detail="Not authorized to access these patients")
         if nurse_id == current_user.nurse_id:
-            patients = crud.get_patients(db, nurse_id=current_user.nurse_id)
+            patients = crud.get_patients(db, nurse_id=current_user.nurse_id, limit=limit, offset=offset)
         else:
             allowed_ids = _allowed_patient_ids_for_user(db, current_user)
-            patients = crud.get_patients(db, patient_ids=list(allowed_ids or []))
+            patients = crud.get_patients(db, patient_ids=list(allowed_ids or []), limit=limit, offset=offset)
         return filter_response_by_role(current_user, patients)
-    patients = crud.get_patients(db, doctor_id=doctor_id, nurse_id=nurse_id)
+    patients = crud.get_patients(db, doctor_id=doctor_id, nurse_id=nurse_id, limit=limit, offset=offset)
     return filter_response_by_role(current_user, patients)
 
 
@@ -1062,6 +1168,7 @@ def get_vitals(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
+    limit = min(limit, MAX_PAGE_SIZE)
     if patient_id is not None:
         p = crud.get_patient(db, patient_id)
         if not p:
@@ -1119,6 +1226,7 @@ def get_alerts(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
+    limit = min(limit, MAX_PAGE_SIZE)
     if current_user.role == "ADMIN":
         return crud.get_alerts(db, status=status, doctor_id=doctor_id, limit=limit, offset=offset)
 
@@ -1233,30 +1341,39 @@ def check_patient_access(db: Session, current_user: models.User, patient: models
 
 
 def check_alert_ownership(db: Session, alert_id: int, current_user: models.User):
-    """Only the assigned doctor can acknowledge alerts (admin only if explicitly enabled)."""
+    """Only authorized medical staff can acknowledge alerts."""
     alert = db.query(models.Alert).filter(models.Alert.alert_id == alert_id).first()
     if not alert:
-        return
+        raise HTTPException(status_code=404, detail="Alert not found")
 
     patient = db.query(models.Patient).filter(models.Patient.patient_id == alert.patient_id).first()
     if not patient:
-        return
+        raise HTTPException(status_code=404, detail="Patient associated with alert not found")
 
-    if current_user.role == "DOCTOR":
-        if not current_user.doctor_id or patient.assigned_doctor != current_user.doctor_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Not authorized to acknowledge this alert",
-            )
-        return
+    is_authorized = False
+    
+    if current_user.role == "ADMIN":
+        if ALLOW_ADMIN_ALERT_ACK:
+            is_authorized = True
+            
+    elif current_user.role == "DOCTOR":
+        if current_user.doctor_id:
+            doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == current_user.doctor_id).first()
+            if patient.assigned_doctor == current_user.doctor_id or (doctor and doctor.hospital_id == patient.hospital_id):
+                is_authorized = True
+                
+    elif current_user.role == "NURSE":
+        if current_user.nurse_id:
+            nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == current_user.nurse_id).first()
+            if patient.assigned_nurse == current_user.nurse_id or (nurse and nurse.hospital_id == patient.hospital_id):
+                is_authorized = True
 
-    if current_user.role == "ADMIN" and ALLOW_ADMIN_ALERT_ACK:
-        return
+    if not is_authorized:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to acknowledge this alert",
+        )
 
-    raise HTTPException(
-        status_code=403,
-        detail="Not authorized to acknowledge this alert",
-    )
 
 
 def _allowed_patient_ids_for_user(db: Session, user: models.User) -> Optional[set[int]]:
@@ -1275,13 +1392,6 @@ def _allowed_patient_ids_for_user(db: Session, user: models.User) -> Optional[se
                 models.Patient.assigned_doctor == user.doctor_id
             ).all()
         }
-        doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == user.doctor_id).first()
-        if doctor and doctor.hospital_id:
-            ids.update(
-                row[0] for row in db.query(models.Patient.patient_id).filter(
-                    models.Patient.hospital_id == doctor.hospital_id
-                ).all()
-            )
         return ids
 
     if user.role == "NURSE":
@@ -1317,6 +1427,7 @@ def get_patient_chat(
     current_user: models.User = Depends(auth.require_auth),
     db: Session = Depends(get_db),
 ):
+    limit = min(limit, MAX_PAGE_SIZE)
     p = crud.get_patient(db, patient_id)
     if not p:
         raise HTTPException(status_code=404, detail="Patient not found")
@@ -1352,10 +1463,12 @@ def post_patient_chat(
 def list_audit_logs(
     entity: Optional[str] = None,
     limit: int = 200,
+    offset: int = 0,
     current_user: models.User = Depends(auth.require_role("ADMIN")),
     db: Session = Depends(get_db),
 ):
-    return crud.get_audit_logs(db, entity=entity, limit=limit)
+    limit = min(limit, MAX_PAGE_SIZE)
+    return crud.get_audit_logs(db, entity=entity, limit=limit, offset=offset)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1368,8 +1481,6 @@ class ConnectionManager:
         self.active_connections: list[WebSocket] = []
         self._ip_counts: dict[str, int] = {}
         self._user_counts: dict[str, int] = {}
-        self._msg_counts: dict[str, int] = {}
-        self._msg_reset_time: dict[str, float] = {}
         self._conn_msg_times: dict[int, list[float]] = {}
         self._conn_user: dict[int, dict] = {}
 
@@ -1405,10 +1516,17 @@ class ConnectionManager:
     def disconnect(self, ws: WebSocket, client_ip: str = "unknown", user_key: str = "unknown"):
         if ws in self.active_connections:
             self.active_connections.remove(ws)
-        current = self._ip_counts.get(client_ip, 1)
-        self._ip_counts[client_ip] = max(0, current - 1)
-        user_current = self._user_counts.get(user_key, 1)
-        self._user_counts[user_key] = max(0, user_current - 1)
+        
+        if client_ip in self._ip_counts:
+            self._ip_counts[client_ip] -= 1
+            if self._ip_counts[client_ip] <= 0:
+                self._ip_counts.pop(client_ip, None)
+        
+        if user_key in self._user_counts:
+            self._user_counts[user_key] -= 1
+            if self._user_counts[user_key] <= 0:
+                self._user_counts.pop(user_key, None)
+
         self._conn_msg_times.pop(id(ws), None)
         self._conn_user.pop(id(ws), None)
 
@@ -1422,20 +1540,6 @@ class ConnectionManager:
             return False
         times.append(now)
         self._conn_msg_times[key] = times
-        return True
-
-    def check_message_rate(self, client_ip: str) -> bool:
-        """Return True if message can be sent, False if rate limited."""
-        import time
-        now = time.time()
-        reset = self._msg_reset_time.get(client_ip, 0)
-        if now - reset > 60:
-            self._msg_counts[client_ip] = 0
-            self._msg_reset_time[client_ip] = now
-        count = self._msg_counts.get(client_ip, 0)
-        if count >= WS_MESSAGES_PER_MINUTE:
-            return False
-        self._msg_counts[client_ip] = count + 1
         return True
 
     async def broadcast_vitals(self, message: str):
@@ -1501,7 +1605,7 @@ async def _redis_vitals_subscriber():
         r = None
         pubsub = None
         try:
-            r = aioredis.from_url(REDIS_URL, socket_connect_timeout=5)
+            r = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, health_check_interval=30)
             pubsub = r.pubsub()
             await pubsub.subscribe(WS_REDIS_CHANNEL)
             async for raw_message in pubsub.listen():
@@ -1510,6 +1614,9 @@ async def _redis_vitals_subscriber():
                     if isinstance(data, bytes):
                         data = data.decode("utf-8")
                     await manager.broadcast_vitals(data)
+            
+            logger.warning("Redis listen loop exited normally. Reconnecting...")
+            await asyncio.sleep(1)
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -1547,6 +1654,22 @@ def _get_ws_user(token: str, db: Session) -> tuple[Optional[models.User], Option
     if not user:
         return None, "invalid"
     return user, None
+
+
+def _is_valid_whatsapp_webhook_secret(request: Request) -> bool:
+    """Validate optional shared-secret for provider webhooks.
+
+    If WHATSAPP_WEBHOOK_SECRET is unset, webhook remains open for compatibility.
+    """
+    if not WHATSAPP_WEBHOOK_SECRET:
+        return True
+    provided = (
+        request.headers.get("x-whatsapp-webhook-secret")
+        or request.headers.get("x-webhook-secret")
+        or request.query_params.get("secret")
+        or ""
+    )
+    return hmac.compare_digest(provided, WHATSAPP_WEBHOOK_SECRET)
 
 
 @app.websocket("/ws/vitals")
@@ -1589,10 +1712,25 @@ async def ws_vitals(websocket: WebSocket):
         return
 
     try:
+        last_val_time = time.time()
         if is_redis_available():
             # Event-driven mode: just keep the connection alive.
             # Broadcasts are handled by _redis_vitals_subscriber.
             while True:
+                # Periodic security re-validation (every 60s)
+                now = time.time()
+                if now - last_val_time > 60:
+                    db_val = SessionLocal()
+                    try:
+                        u_check, err = _get_ws_user(token, db_val)
+                        if not u_check:
+                            logger.warning("WS security re-validation failed for %s: %s", user.username, err)
+                            await websocket.close(code=1008, reason=f"Session invalid: {err}")
+                            break
+                        last_val_time = now
+                    finally:
+                        db_val.close()
+
                 # Wait for client messages (ping/pong keepalive)
                 try:
                     await asyncio.wait_for(websocket.receive_text(), timeout=30)
@@ -1616,6 +1754,16 @@ async def ws_vitals(websocket: WebSocket):
             db = SessionLocal()
             try:
                 while True:
+                    # Periodic security re-validation (every 60s)
+                    now = time.time()
+                    if now - last_val_time > 60:
+                        u_check, err = _get_ws_user(token, db)
+                        if not u_check:
+                            logger.warning("WS security re-validation failed for %s: %s", user.username, err)
+                            await websocket.close(code=1008, reason=f"Session invalid: {err}")
+                            break
+                        last_val_time = now
+
                     allowed_ids = _allowed_patient_ids_for_user(db, user)
                     patients = crud.get_patients(db)
                     if allowed_ids is not None:
@@ -1682,8 +1830,18 @@ def get_whatsapp_config(
 def add_whatsapp_recipient(
     body: schemas.WhatsAppRecipientAdd,
     current_user: models.User = Depends(auth.require_role("ADMIN")),
+    db: Session = Depends(get_db),
 ):
     """Add a WhatsApp recipient phone number."""
+    phone = body.phone.strip().lstrip("+")
+    existing_recipients = whatsapp_notifier.get_all_recipients()
+    
+    doctor = db.query(models.Doctor).filter(models.Doctor.phone.like(f"%{phone}%")).first()
+    nurse = db.query(models.Nurse).filter(models.Nurse.phone.like(f"%{phone}%")).first()
+    
+    if phone in existing_recipients or doctor or nurse:
+        raise HTTPException(status_code=400, detail="Phone number is already a recipient")
+        
     whatsapp_notifier.add_recipient(body.phone)
     return whatsapp_notifier.get_config()
 
@@ -1735,6 +1893,10 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
     No auth required (GREEN-API calls this endpoint).
     """
     try:
+        if not _is_valid_whatsapp_webhook_secret(request):
+            logger.warning("WhatsApp webhook rejected: invalid shared secret")
+            raise HTTPException(status_code=403, detail="Invalid webhook signature")
+
         body = await request.json()
         logger.info("WhatsApp webhook received: typeWebhook=%s", body.get("typeWebhook"))
 
@@ -1748,10 +1910,18 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
 
         # Parse message text
         message_data = body.get("messageData", {})
-        text_data = message_data.get("textMessageData", {})
-        text = text_data.get("textMessage", "").strip()
+        msg_type_inner = message_data.get("typeMessage")
+        
+        text = ""
+        if msg_type_inner == "textMessage":
+            text_data = message_data.get("textMessageData", {})
+            text = text_data.get("textMessage", "").strip()
+        elif msg_type_inner == "buttonsResponseMessage":
+            buttons_data = message_data.get("buttonsResponseMessage", {})
+            # We map buttonId to the clinical command (e.g. "ACK 123")
+            text = buttons_data.get("buttonId", "").strip()
 
-        logger.info("WhatsApp reply from %s: '%s'", sender_phone, text)
+        logger.info("WhatsApp reply from %s: '%s' (type: %s)", sender_phone, text, msg_type_inner)
 
         text_upper = text.upper()
 
@@ -1809,63 +1979,63 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
             return {"status": "acknowledged", "alert_ids": [target_alert_id]}
 
         elif text_upper in ("ACK", "1", "ACKNOWLEDGE", "OK", "YES"):
-            # Backward compatible: acknowledge all/latest pending alerts for this doctor
-            candidate_ids = whatsapp_notifier.acknowledge_by_phone(sender_phone)
-            acknowledged_ids: list[int] = []
+            # ── v5.2: Database-driven ACK (Resilient to server restart) ────
+            # 1. Find the doctor/nurse by sender phone
+            staff_user = db.query(models.User).filter(
+                (models.User.doctor_id.in_(
+                    db.query(models.Doctor.doctor_id).filter(models.Doctor.phone.like(f"%{sender_phone[-10:]}%"))
+                )) | (models.User.nurse_id.in_(
+                    db.query(models.Nurse.nurse_id).filter(models.Nurse.phone.like(f"%{sender_phone[-10:]}%"))
+                ))
+            ).first()
 
-            if candidate_ids:
-                for alert_id in candidate_ids:
-                    alert = db.query(models.Alert).filter(
-                        models.Alert.alert_id == alert_id
-                    ).first()
-                    if alert and alert.status in ("PENDING", "ESCALATED"):
-                        patient = db.query(models.Patient).filter(
-                            models.Patient.patient_id == alert.patient_id
-                        ).first()
-                        doctor = None
-                        doctor_user = None
-                        if patient and patient.assigned_doctor:
-                            doctor = db.query(models.Doctor).filter(
-                                models.Doctor.doctor_id == patient.assigned_doctor
-                            ).first()
-                            doctor_user = db.query(models.User).filter(
-                                models.User.doctor_id == patient.assigned_doctor
-                            ).first()
-                        if not doctor or not doctor.phone:
-                            continue
-                        clean_doc_phone = doctor.phone.strip().lstrip("+")
-                        clean_sender = sender_phone.strip().lstrip("+")
-                        if clean_doc_phone[-10:] != clean_sender[-10:]:
-                            continue
+            if not staff_user:
+                return {"status": "unrecognized_sender", "phone": sender_phone}
 
-                        alert.status = "ACKNOWLEDGED"
-                        alert.acknowledged_by = doctor_user.user_id if doctor_user else None
-                        alert.acknowledged_at = datetime.now(timezone.utc)
-                        db.commit()
-                        acknowledged_ids.append(alert_id)
-                        if doctor_user:
-                            crud.write_audit(db, "ACKNOWLEDGE", "alert", entity_id=alert_id, user_id=doctor_user.user_id)
-                        logger.info("Alert #%s marked ACKNOWLEDGED via WhatsApp by %s",
-                                    alert_id, sender_phone)
+            # 2. Find their most recent PENDING or ESCALATED alert
+            allowed_ids = _allowed_patient_ids_for_user(db, staff_user)
+            alert = db.query(models.Alert).filter(
+                models.Alert.patient_id.in_(list(allowed_ids or [-1])),
+                models.Alert.status.in_(["PENDING", "ESCALATED"])
+            ).order_by(models.Alert.created_at.desc()).first()
 
-            if acknowledged_ids:
-                doctor = db.query(models.Doctor).filter(
-                    models.Doctor.phone.like(f"%{sender_phone[-10:]}%")
-                ).first()
-                doctor_name = doctor.name if doctor else "Doctor"
+            if alert:
+                alert.status = "ACKNOWLEDGED"
+                alert.acknowledged_by = staff_user.user_id
+                alert.acknowledged_at = datetime.now(timezone.utc)
+                db.commit()
+                
+                crud.write_audit(db, "ACKNOWLEDGE", "alert", entity_id=alert.alert_id, user_id=staff_user.user_id, details="Via WhatsApp (Reply)")
+                whatsapp_notifier.acknowledge_alert_by_id(alert.alert_id, sender_phone)
+
+                staff_name = "Staff"
+                if staff_user.doctor_id:
+                    d = db.query(models.Doctor).filter(models.Doctor.doctor_id == staff_user.doctor_id).first()
+                    staff_name = d.name if d else "Doctor"
+                elif staff_user.nurse_id:
+                    n = db.query(models.Nurse).filter(models.Nurse.nurse_id == staff_user.nurse_id).first()
+                    staff_name = n.name if n else "Nurse"
 
                 whatsapp_notifier.send_whatsapp_message(
                     sender_phone,
-                    f"✅ Thank you, {doctor_name}!\n"
-                    f"Alert(s) #{', #'.join(map(str, acknowledged_ids))} "
-                    f"marked as ACKNOWLEDGED.\n"
-                    f"🕐 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                    f"✅ Thank you, {staff_name}!\n"
+                    f"Alert #{alert.alert_id} marked as ACKNOWLEDGED.\n"
+                    f"🕐 {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}"
                 )
-                return {"status": "acknowledged", "alert_ids": acknowledged_ids}
+                return {"status": "acknowledged", "alert_ids": [alert.alert_id]}
             else:
                 return {"status": "no_pending_alerts", "phone": sender_phone}
 
+        elif text_upper == "TEST_ACK":
+            whatsapp_notifier.send_whatsapp_message(
+                sender_phone,
+                "🧪 *Handshake Verified*\n\nClinical terminal is online and receiving telemetry. You are connected to the Intelligent Care Pulse."
+            )
+            return {"status": "test_verified"}
+
         return {"status": "received", "action": "none"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("WhatsApp webhook error: %s", e, exc_info=True)
         return {"status": "error", "detail": "Unable to process webhook payload"}
@@ -2116,6 +2286,12 @@ def fresh_reset_domain_data(
     current_user: models.User = Depends(auth.require_role("ADMIN")),
     db: Session = Depends(get_db),
 ):
+    if IS_PRODUCTION and os.getenv("ALLOW_DANGEROUS_RESET", "false").lower() != "true":
+        raise HTTPException(
+            status_code=400,
+            detail="Fresh reset is disabled in production. Set ALLOW_DANGEROUS_RESET=true to override."
+        )
+        
     deleted_users = db.query(models.User).filter(models.User.role != "ADMIN").count()
     deleted_patients = db.query(models.Patient).count()
     deleted_doctors = db.query(models.Doctor).count()
@@ -2225,4 +2401,5 @@ def list_whatsapp_logs(
     current_user: models.User = Depends(auth.require_role("ADMIN")),
     db: Session = Depends(get_db),
 ):
+    limit = min(limit, MAX_PAGE_SIZE)
     return crud.get_whatsapp_logs(db, limit=limit, offset=offset)

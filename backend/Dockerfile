@@ -12,6 +12,8 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY . .
 
+RUN chmod +x /app/start.sh
+
 RUN adduser --disabled-password --gecos "" appuser && \
     chown -R appuser:appuser /app
 
@@ -19,5 +21,5 @@ USER appuser
 
 EXPOSE 8000
 
-# Seed the admin user on first start, then launch the API server
-CMD ["sh", "-c", "python seed_db.py && uvicorn main:app --host 0.0.0.0 --port 8000"]
+# Validate env, seed admin if needed, then launch API server
+CMD ["/app/start.sh"]

@@ -10,6 +10,7 @@ import logging
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 from logger import log_security_event
 
@@ -49,9 +50,23 @@ def setup_exception_handlers(app: FastAPI):
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        safe_errors = []
+        for err in exc.errors():
+            safe_err = err.copy()
+            safe_err.pop('input', None)
+            safe_err.pop('url', None)
+            
+            # Fix: Ensure 'ctx' contains only serializable data (convert ValueError etc to string)
+            if 'ctx' in safe_err and isinstance(safe_err['ctx'], dict):
+                for k, v in safe_err['ctx'].items():
+                    if isinstance(v, Exception):
+                        safe_err['ctx'][k] = str(v)
+            
+            safe_errors.append(safe_err)
+            
         logger.warning(
             "Validation error: %s %s – %s",
-            request.method, request.url.path, str(exc.errors())[:500],
+            request.method, request.url.path, str(safe_errors)[:500],
             extra={"action": "validation_error"},
         )
         return JSONResponse(
@@ -62,7 +77,27 @@ def setup_exception_handlers(app: FastAPI):
                     "code": 422,
                     "message": "Validation error",
                     "type": "ValidationError",
-                    "details": exc.errors() if not IS_PRODUCTION else "Invalid request data",
+                    "details": safe_errors if not IS_PRODUCTION else "Invalid request data",
+                },
+            },
+        )
+
+    @app.exception_handler(SQLAlchemyError)
+    async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
+        logger.error(
+            "Database error: %s %s – %s",
+            request.method, request.url.path, str(exc),
+            exc_info=True,
+            extra={"action": "database_error"},
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": {
+                    "code": 503,
+                    "message": "A database error occurred. Please try again later.",
+                    "type": "DatabaseError",
                 },
             },
         )

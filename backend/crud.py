@@ -4,9 +4,9 @@ crud.py  –  Database operations for the Patient Monitor system.
 
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 import models
@@ -31,10 +31,11 @@ def _active_source_name() -> str:
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
-def write_audit(db: Session, action: str, entity: str, entity_id: int = None, user_id: int = None):
+def write_audit(db: Session, action: str, entity: str, entity_id: int = None, user_id: int = None, details: str = None):
     log = models.AuditLog(
         user_id=user_id, action=action, entity=entity,
-        entity_id=entity_id, timestamp=datetime.now(),
+        entity_id=entity_id, timestamp=datetime.now(timezone.utc),
+        details=details
     )
     db.add(log)
     db.commit()
@@ -45,6 +46,28 @@ def get_audit_logs(db: Session, entity: str = None, limit: int = 200, offset: in
     if entity:
         q = q.filter(models.AuditLog.entity == entity)
     return q.order_by(models.AuditLog.timestamp.desc()).offset(offset).limit(limit).all()
+
+
+def delete_hospital(db: Session, hospital_id: int, user_id: int):
+    """Hard delete: physically remove hospital from the DB.
+    Nullifies hospital_id on linked Patient, Doctor, and Nurse records.
+    """
+    hospital = db.query(models.Hospital).filter(models.Hospital.hospital_id == hospital_id).first()
+    if hospital:
+        # 1. Nullify linked Patient hospital_id
+        db.query(models.Patient).filter(models.Patient.hospital_id == hospital_id).update({"hospital_id": None})
+        
+        # 2. Nullify linked Doctor hospital_id
+        db.query(models.Doctor).filter(models.Doctor.hospital_id == hospital_id).update({"hospital_id": None})
+        
+        # 3. Nullify linked Nurse hospital_id
+        db.query(models.Nurse).filter(models.Nurse.hospital_id == hospital_id).update({"hospital_id": None})
+        
+        # 4. Delete hospital
+        db.delete(hospital)
+        db.commit()
+        write_audit(db, "DELETE", "hospital", entity_id=hospital_id, user_id=user_id)
+    return hospital
 
 
 # ── Vitals ────────────────────────────────────────────────────────────────────
@@ -68,7 +91,7 @@ def sync_alerts_for_vital(db: Session, vital_record: models.Vitals):
     """
     patient_id = vital_record.patient_id
     source = _normalize_source_name(getattr(vital_record, "source", None) or _active_source_name())
-    triggered = alert_engine.check_alerts(vital_record)
+    triggered = alert_engine.check_alerts(vital_record, db=db)
 
     if not triggered:
         pending = db.query(models.Alert).filter(
@@ -136,16 +159,20 @@ def get_vitals(
     q = q.filter(models.Vitals.source == source_name)
     if patient_id:
         q = q.filter(models.Vitals.patient_id == patient_id)
+        
+    _p_ids = None
     if doctor_id:
-        patient_ids = [p.patient_id for p in get_patients_by_doctor(db, doctor_id)]
-        q = q.filter(models.Vitals.patient_id.in_(patient_ids))
-    if nurse_id:
-        patient_ids = [p.patient_id for p in get_patients(db, nurse_id=nurse_id)]
-        q = q.filter(models.Vitals.patient_id.in_(patient_ids))
-    if patient_ids is not None:
-        if not patient_ids:
+        _p_ids = [p.patient_id for p in get_patients_by_doctor(db, doctor_id)]
+    elif nurse_id:
+        _p_ids = [p.patient_id for p in get_patients(db, nurse_id=nurse_id)]
+    elif patient_ids is not None:
+        _p_ids = patient_ids
+
+    if _p_ids is not None:
+        if not _p_ids:
             return []
-        q = q.filter(models.Vitals.patient_id.in_(patient_ids))
+        q = q.filter(models.Vitals.patient_id.in_(_p_ids))
+        
     return q.order_by(models.Vitals.timestamp.desc()).offset(offset).limit(limit).all()
 
 
@@ -175,7 +202,7 @@ def create_alert(db: Session, patient_id: int, vital_id: int, alert_type: str, s
     )
     if duplicate:
         # Update last_checked_at to track that abnormal vitals are still occurring
-        duplicate.last_checked_at = datetime.now()
+        duplicate.last_checked_at = datetime.now(timezone.utc)
         db.commit()
         logger.debug("Duplicate alert suppressed: %s for patient %s (updated last_checked_at)", alert_type, patient_id)
         return None  # Return None so callers know this is a duplicate, not a new alert
@@ -186,7 +213,7 @@ def create_alert(db: Session, patient_id: int, vital_id: int, alert_type: str, s
         alert_type=alert_type,
         source=source_name,
         status="PENDING",
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(new_alert)
     db.commit()
@@ -229,27 +256,40 @@ def acknowledge_alert(
     current_user: models.User,
     allow_admin_override: bool = False,
 ):
-    alert = db.query(models.Alert).filter(models.Alert.alert_id == alert_id).first()
+    alert = db.query(models.Alert).filter(models.Alert.alert_id == alert_id).with_for_update().first()
     if not alert:
         return None
+
+    if alert.status == "ACKNOWLEDGED":
+        raise HTTPException(status_code=400, detail="Alert already acknowledged")
 
     patient = db.query(models.Patient).filter(models.Patient.patient_id == alert.patient_id).first()
     if not patient:
         return None
 
-    if current_user.role == "DOCTOR":
-        if not current_user.doctor_id or patient.assigned_doctor != current_user.doctor_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Not authorized to acknowledge this alert",
-            )
-    elif current_user.role == "ADMIN":
-        if not allow_admin_override:
-            raise HTTPException(
-                status_code=403,
-                detail="Not authorized to acknowledge this alert",
-            )
-    else:
+    # ── Authorization Logic ──
+    is_authorized = False
+    
+    if current_user.role == "ADMIN":
+        # Admins can always acknowledge if override is allowed (standard in this setup)
+        if allow_admin_override:
+            is_authorized = True
+            
+    elif current_user.role == "DOCTOR":
+        # Assigned doctor or any doctor at the same hospital
+        if current_user.doctor_id:
+            doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == current_user.doctor_id).first()
+            if patient.assigned_doctor == current_user.doctor_id or (doctor and doctor.hospital_id == patient.hospital_id):
+                is_authorized = True
+                
+    elif current_user.role == "NURSE":
+        # Assigned nurse or any nurse at the same hospital
+        if current_user.nurse_id:
+            nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == current_user.nurse_id).first()
+            if patient.assigned_nurse == current_user.nurse_id or (nurse and nurse.hospital_id == patient.hospital_id):
+                is_authorized = True
+
+    if not is_authorized:
         raise HTTPException(
             status_code=403,
             detail="Not authorized to acknowledge this alert",
@@ -257,7 +297,23 @@ def acknowledge_alert(
 
     alert.status = "ACKNOWLEDGED"
     alert.acknowledged_by = current_user.user_id
-    alert.acknowledged_at = datetime.now()
+    alert.acknowledged_at = datetime.now(timezone.utc)
+    
+    # ── Create SLA Record ──
+    try:
+        response_time = (alert.acknowledged_at - alert.created_at).total_seconds()
+        # Mark as breached if it took longer than 2 minutes (120s) to acknowledge
+        sla = models.SLARecord(
+            alert_id=alert.alert_id,
+            patient_id=alert.patient_id,
+            response_time_seconds=int(response_time),
+            breached=(response_time > 120),
+            created_at=datetime.now(timezone.utc)
+        )
+        db.add(sla)
+    except Exception as e:
+        logger.error("Failed to create SLA record: %s", e)
+
     db.commit()
     db.refresh(alert)
     write_audit(db, "ACKNOWLEDGE", "alert", entity_id=alert.alert_id, user_id=current_user.user_id)
@@ -270,7 +326,7 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
     Create escalation records for same-specialization doctors.
     Create notifications for those doctors + nurses at the patient's hospital.
     """
-    cutoff = datetime.now() - timedelta(minutes=threshold_minutes)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=threshold_minutes)
     source_name = _active_source_name()
     stale = (
         db.query(models.Alert)
@@ -282,6 +338,7 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
         .all()
     )
     escalated = []
+    objects_to_save = []
     for alert in stale:
         alert.status = "ESCALATED"
         escalated.append(alert)
@@ -329,32 +386,29 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
 
         # Create escalation records for each same-spec doctor
         for doc in same_spec_doctors:
-            esc = models.AlertEscalation(
+            objects_to_save.append(models.AlertEscalation(
                 alert_id=alert.alert_id,
                 escalated_to_doctor=doc.doctor_id,
-                escalated_at=datetime.now(),
-            )
-            db.add(esc)
+                escalated_at=datetime.now(timezone.utc),
+            ))
 
             # Notify the doctor (via user account)
             doc_user = db.query(models.User).filter(models.User.doctor_id == doc.doctor_id).first()
             if doc_user:
-                notif = models.AlertNotification(
+                objects_to_save.append(models.AlertNotification(
                     alert_id=alert.alert_id,
                     user_id=doc_user.user_id,
-                    message=f"🔺 ESCALATED: {alert.alert_type} for patient {patient.name} (Room {patient.room_number}). Original doctor did not respond.",
-                    created_at=datetime.now(),
-                )
-                db.add(notif)
+                    message=f"🔺 ESCALATED: {alert.alert_type} for patient {patient.name} (Room {patient.room_number}).",
+                    created_at=datetime.now(timezone.utc),
+                ))
 
         # Also create escalation for the assigned doctor
         if assigned_doctor:
-            esc = models.AlertEscalation(
+            objects_to_save.append(models.AlertEscalation(
                 alert_id=alert.alert_id,
                 escalated_to_doctor=assigned_doctor.doctor_id,
-                escalated_at=datetime.now(),
-            )
-            db.add(esc)
+                escalated_at=datetime.now(timezone.utc),
+            ))
 
         # Notify nurses at the patient's hospital
         if patient.hospital_id:
@@ -366,13 +420,12 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
             for nurse in hospital_nurses:
                 nurse_user = db.query(models.User).filter(models.User.nurse_id == nurse.nurse_id).first()
                 if nurse_user:
-                    notif = models.AlertNotification(
+                    objects_to_save.append(models.AlertNotification(
                         alert_id=alert.alert_id,
                         user_id=nurse_user.user_id,
                         message=f"🔺 ESCALATED: {alert.alert_type} for patient {patient.name} (Room {patient.room_number}). Please check immediately.",
-                        created_at=datetime.now(),
-                    )
-                    db.add(notif)
+                        created_at=datetime.now(timezone.utc),
+                    ))
 
         # Send WhatsApp escalation notification to escalated doctors + assigned staff
         try:
@@ -402,6 +455,9 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
                 )
         except Exception as e:
             logger.error("WhatsApp escalation notification failed for alert %s: %s", alert.alert_id, e)
+
+    if objects_to_save:
+        db.add_all(objects_to_save)
 
     if escalated:
         db.commit()
@@ -466,8 +522,15 @@ def get_patients(
     patient_ids: list[int] | None = None,
     limit: int = 200,
     offset: int = 0,
+    include_inactive: bool = False,
 ):
-    q = db.query(models.Patient)
+    q = db.query(models.Patient).options(
+        joinedload(models.Patient.doctor),
+        joinedload(models.Patient.nurse),
+        joinedload(models.Patient.hospital)
+    )
+    if not include_inactive:
+        q = q.filter(models.Patient.is_active == True)
     if doctor_id:
         q = q.filter(models.Patient.assigned_doctor == doctor_id)
     if nurse_id:
@@ -544,7 +607,7 @@ def create_patient(db: Session, patient: schemas.PatientCreate, user_id: int):
 
 
 def update_patient(db: Session, patient_id: int, payload: schemas.PatientUpdate, user_id: int):
-    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).with_for_update().first()
     if not patient:
         return None
     _validate_patient_links(
@@ -553,11 +616,21 @@ def update_patient(db: Session, patient_id: int, payload: schemas.PatientUpdate,
         assigned_doctor=payload.assigned_doctor,
         assigned_nurse=payload.assigned_nurse,
     )
-    for field, value in payload.model_dump().items():
-        setattr(patient, field, value)
+    
+    # ── Track changes for audit ──
+    changes = []
+    dump = payload.model_dump()
+    for field, new_val in dump.items():
+        old_val = getattr(patient, field)
+        if str(old_val) != str(new_val):
+            changes.append(f"{field}: {old_val} -> {new_val}")
+            setattr(patient, field, new_val)
+            
     db.commit()
     db.refresh(patient)
-    write_audit(db, "UPDATE", "patient", entity_id=patient_id, user_id=user_id)
+    
+    detail_str = "; ".join(changes) if changes else "No changes detected"
+    write_audit(db, "UPDATE", "patient", entity_id=patient_id, user_id=user_id, details=detail_str[:1000])
     return _enrich_patient(patient)
 
 
@@ -565,7 +638,7 @@ def delete_patient(db: Session, patient_id: int, user_id: int):
     """Hard delete: physically remove patient and all their related data from the DB.
     Cascades: vitals, alerts, escalations, notifications, chat messages.
     """
-    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).with_for_update().first()
     if patient:
         # Get all alerts for this patient to delete related escalations/notifications
         alerts = db.query(models.Alert).filter(models.Alert.patient_id == patient_id).all()
@@ -573,27 +646,27 @@ def delete_patient(db: Session, patient_id: int, user_id: int):
         
         # Delete related escalations
         if alert_ids:
-            db.query(models.AlertEscalation).filter(models.AlertEscalation.alert_id.in_(alert_ids)).delete()
+            db.query(models.AlertEscalation).filter(models.AlertEscalation.alert_id.in_(alert_ids)).delete(synchronize_session=False)
         
         # Delete related notifications
         if alert_ids:
-            db.query(models.AlertNotification).filter(models.AlertNotification.alert_id.in_(alert_ids)).delete()
+            db.query(models.AlertNotification).filter(models.AlertNotification.alert_id.in_(alert_ids)).delete(synchronize_session=False)
         
         # Delete related WhatsApp logs
         if alert_ids:
-            db.query(models.WhatsAppLog).filter(models.WhatsAppLog.alert_id.in_(alert_ids)).delete()
+            db.query(models.WhatsAppLog).filter(models.WhatsAppLog.alert_id.in_(alert_ids)).delete(synchronize_session=False)
         
         # Delete SLA records
-        db.query(models.SLARecord).filter(models.SLARecord.patient_id == patient_id).delete()
+        db.query(models.SLARecord).filter(models.SLARecord.patient_id == patient_id).delete(synchronize_session=False)
         
         # Delete chat messages
-        db.query(models.ChatMessage).filter(models.ChatMessage.patient_id == patient_id).delete()
+        db.query(models.ChatMessage).filter(models.ChatMessage.patient_id == patient_id).delete(synchronize_session=False)
         
         # Delete alerts
-        db.query(models.Alert).filter(models.Alert.patient_id == patient_id).delete()
+        db.query(models.Alert).filter(models.Alert.patient_id == patient_id).delete(synchronize_session=False)
         
         # Delete all vitals
-        db.query(models.Vitals).filter(models.Vitals.patient_id == patient_id).delete()
+        db.query(models.Vitals).filter(models.Vitals.patient_id == patient_id).delete(synchronize_session=False)
         
         # Delete patient first; audit only after successful commit.
         db.delete(patient)
@@ -603,7 +676,7 @@ def delete_patient(db: Session, patient_id: int, user_id: int):
 
 
 def assign_doctor(db: Session, patient_id: int, doctor_id: int | None):
-    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).with_for_update().first()
     if not patient:
         return None
     if doctor_id is None:
@@ -620,6 +693,9 @@ def assign_doctor(db: Session, patient_id: int, doctor_id: int | None):
     doctor = db.query(models.Doctor).filter(models.Doctor.doctor_id == doctor_id).first()
     if not doctor:
         return None
+    if doctor.is_available is False:
+        # Cannot assign to an unavailable doctor
+        return None
     patient.assigned_doctor = doctor_id
     _validate_patient_links(
         db,
@@ -633,7 +709,7 @@ def assign_doctor(db: Session, patient_id: int, doctor_id: int | None):
 
 
 def assign_nurse(db: Session, patient_id: int, nurse_id: int | None):
-    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).with_for_update().first()
     if not patient:
         return None
     if nurse_id is None:
@@ -721,19 +797,18 @@ def delete_doctor(db: Session, doctor_id: int, user_id: int):
     if doctor:
         # 1. Nullify FK on linked patient records
         db.query(models.Patient).filter(models.Patient.assigned_doctor == doctor_id).update({"assigned_doctor": None})
-        
-        # 2. Delete alert escalations assigned to this doctor
-        db.query(models.AlertEscalation).filter(models.AlertEscalation.escalated_to_doctor == doctor_id).delete()
-        
-        # 3. Nullify FK on linked user accounts
-        db.query(models.User).filter(models.User.doctor_id == doctor_id).update({"doctor_id": None})
-        
-        # 4. Delete doctor first; audit only after successful commit.
+
+        # 2. Nullify FK on alert escalations (preserve clinical history)
+        db.query(models.AlertEscalation).filter(models.AlertEscalation.escalated_to_doctor == doctor_id).update({"escalated_to_doctor": None})
+
+        # 3. Physically remove associated login account
+        db.query(models.User).filter(models.User.doctor_id == doctor_id).delete()
+
+        # 4. Delete doctor profile; audit only after successful commit.
         db.delete(doctor)
         db.commit()
         write_audit(db, "DELETE", "doctor", entity_id=doctor_id, user_id=user_id)
     return doctor
-
 
 # ── Nurses ────────────────────────────────────────────────────────────────────
 def _enrich_nurse(nurse):
@@ -783,13 +858,15 @@ def update_nurse(db: Session, nurse_id: int, payload: schemas.NurseUpdate, user_
 
 def delete_nurse(db: Session, nurse_id: int, user_id: int):
     """Hard delete: physically remove nurse from the DB.
-    Also nullifies nurse_id on any linked user accounts.
+    Also nullifies nurse_id on any linked user accounts and patients.
     """
     nurse = db.query(models.Nurse).filter(models.Nurse.nurse_id == nurse_id).first()
     if nurse:
-        # Nullify FK on linked user accounts before deleting
-        db.query(models.User).filter(models.User.nurse_id == nurse_id).update({"nurse_id": None})
-        # Delete nurse first; audit only after successful commit.
+        # Nullify FK on linked patient records
+        db.query(models.Patient).filter(models.Patient.assigned_nurse == nurse_id).update({"assigned_nurse": None})
+        # Physically remove associated login account
+        db.query(models.User).filter(models.User.nurse_id == nurse_id).delete()
+        # Delete nurse profile; audit only after successful commit.
         db.delete(nurse)
         db.commit()
         write_audit(db, "DELETE", "nurse", entity_id=nurse_id, user_id=user_id)
@@ -801,13 +878,29 @@ def get_hospitals(db: Session):
     return db.query(models.Hospital).all()
 
 
-def create_hospital(db: Session, hospital: schemas.HospitalCreate):
+def create_hospital(db: Session, hospital: schemas.HospitalCreate, user_id: int):
     db_hospital = models.Hospital(**hospital.model_dump())
     db.add(db_hospital)
     db.commit()
     db.refresh(db_hospital)
-    write_audit(db, "CREATE", "hospital", entity_id=db_hospital.hospital_id)
+    write_audit(db, "CREATE", "hospital", entity_id=db_hospital.hospital_id, user_id=user_id)
     return db_hospital
+
+
+def get_hospital(db: Session, hospital_id: int):
+    return db.query(models.Hospital).filter(models.Hospital.hospital_id == hospital_id).first()
+
+
+def update_hospital(db: Session, hospital_id: int, payload: schemas.HospitalUpdate, user_id: int):
+    hospital = db.query(models.Hospital).filter(models.Hospital.hospital_id == hospital_id).first()
+    if not hospital:
+        return None
+    for field, value in payload.model_dump().items():
+        setattr(hospital, field, value)
+    db.commit()
+    db.refresh(hospital)
+    write_audit(db, "UPDATE", "hospital", entity_id=hospital_id, user_id=user_id)
+    return hospital
 
 
 # ── Dashboard Stats ───────────────────────────────────────────────────────────
@@ -899,6 +992,22 @@ def get_dashboard_stats(db: Session, current_user: models.User):
             ]
         alert_q = alert_q.filter(models.Alert.patient_id.in_(patient_ids_for_scope or [-1]))
 
+    # ── SLA & Performance Metrics ──
+    avg_resp = 0
+    sla_breaches = 0
+    try:
+        sla_q = db.query(models.SLARecord)
+        if patient_ids_for_scope:
+            sla_q = sla_q.filter(models.SLARecord.patient_id.in_(patient_ids_for_scope))
+        
+        sla_breaches = sla_q.filter(models.SLARecord.breached == True).count()
+        avg_resp_row = db.query(func.avg(models.SLARecord.response_time_seconds)).filter(
+            models.SLARecord.patient_id.in_(patient_ids_for_scope) if patient_ids_for_scope else True
+        ).first()
+        avg_resp = float(avg_resp_row[0] or 0)
+    except Exception as e:
+        logger.error("Error computing Dashboard SLA metrics: %s", e)
+
     return schemas.DashboardStats(
         total_patients=patient_q.count(),
         total_doctors=db.query(models.Doctor).count(),
@@ -908,6 +1017,8 @@ def get_dashboard_stats(db: Session, current_user: models.User):
         escalated_alerts=alert_q.filter(models.Alert.status == "ESCALATED").count(),
         acknowledged_alerts=alert_q.filter(models.Alert.status == "ACKNOWLEDGED").count(),
         duplicate_vitals_count=_duplicate_vitals_count_for_patients(db, patient_ids_for_scope, source=source_name),
+        avg_response_time_seconds=avg_resp,
+        sla_breach_count=sla_breaches
     )
 
 
@@ -920,7 +1031,7 @@ def create_chat_message(db: Session, patient_id: int,
         sender_username=sender_username,
         sender_role=sender_role,
         message=message,
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(msg)
     db.commit()
@@ -960,8 +1071,8 @@ def create_whatsapp_log(db: Session, alert_id: int = None, recipient: str = "",
         attempts=1,
         error=error,
         idempotency_key=idempotency_key,
-        created_at=datetime.now(),
-        sent_at=datetime.now() if status == "SENT" else None,
+        created_at=datetime.now(timezone.utc),
+        sent_at=datetime.now(timezone.utc) if status == "SENT" else None,
     )
     db.add(log)
     db.commit()

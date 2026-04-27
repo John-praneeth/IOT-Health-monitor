@@ -26,6 +26,10 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# Prevent outbound request URL logs from exposing provider credentials in path.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 # ── Feature toggle ────────────────────────────────────────────────────────────
 WHATSAPP_ENABLED = os.getenv("WHATSAPP_ENABLED", "true").lower() in ("true", "1", "yes")
 
@@ -348,9 +352,10 @@ def _format_escalation_message(
 # ── Send via GREEN-API ───────────────────────────────────────────────────────
 
 def send_whatsapp_message(phone: str, body: str, retries: int = 3,
-                          alert_id: int = None, event_type: str = "NEW") -> bool:
-    """Send a single WhatsApp message via GREEN-API (FREE) with retry + exponential backoff.
-    Uses idempotency key (alert_id + event_type + phone) to prevent duplicate sends.
+                          alert_id: int = None, event_type: str = "NEW",
+                          buttons: list = None) -> bool:
+    """Send a WhatsApp message via GREEN-API (FREE) with retry + exponential backoff.
+    Supports interactive buttons via the sendButtons endpoint.
     """
     import time
 
@@ -384,18 +389,34 @@ def send_whatsapp_message(phone: str, body: str, retries: int = 3,
         except Exception:
             pass
 
-    url = f"{GREEN_API_URL}/waInstance{GREEN_API_ID}/sendMessage/{GREEN_API_TOKEN}"
+    # Determine endpoint and payload based on buttons
     chat_id = _phone_to_chat_id(phone)
-    payload = {"chatId": chat_id, "message": body}
+    if buttons:
+        # v5.2: Use 2026 GREEN-API Interactive Reply specification
+        method = "sendInteractiveButtonsReply"
+        payload = {
+            "chatId": chat_id,
+            "body": body,
+            "footer": "Medical Monitoring System",
+            "buttons": buttons
+        }
+    else:
+        method = "sendMessage"
+        payload = {
+            "chatId": chat_id,
+            "message": body
+        }
+
+    url = f"{GREEN_API_URL}/waInstance{GREEN_API_ID}/{method}/{GREEN_API_TOKEN}"
 
     for attempt in range(1, retries + 1):
         try:
-            response = httpx.post(url, json=payload, timeout=30)
+            response = httpx.post(url, json=payload, timeout=5)
 
             if response.status_code == 200:
                 data = response.json()
-                logger.info("✅ WhatsApp message sent to %s (id: %s, attempt: %d)",
-                            phone, data.get("idMessage", ""), attempt)
+                logger.info("✅ WhatsApp %s sent to %s (id: %s, attempt: %d)",
+                            method, phone, data.get("idMessage", ""), attempt)
 
                 # Track metrics
                 try:
@@ -413,6 +434,16 @@ def send_whatsapp_message(phone: str, body: str, retries: int = 3,
                     "❌ GREEN-API error for %s: HTTP %d – %s (attempt %d/%d)",
                     phone, response.status_code, response.text[:200], attempt, retries,
                 )
+                
+                # v5.2 Resiliency: If buttons are blocked by provider, fallback to plain text instantly
+                if buttons and response.status_code in (400, 403, 404):
+                    logger.warning("Interactive buttons rejected by WhatsApp provider. Falling back to standard text message.")
+                    buttons = None
+                    method = "sendMessage"
+                    payload = {"chatId": chat_id, "message": body}
+                    url = f"{GREEN_API_URL}/waInstance{GREEN_API_ID}/{method}/{GREEN_API_TOKEN}"
+                    continue # Retry immediately with plain text
+
         except httpx.TimeoutException:
             logger.error("⏱️ Timeout sending WhatsApp to %s (attempt %d/%d)", phone, attempt, retries)
         except Exception as e:
@@ -506,9 +537,17 @@ def send_alert_notification(
         alert_id=alert_id,
     )
 
+    # v5.2: Add interactive Acknowledge button
+    buttons = []
+    if alert_id:
+        buttons.append({
+            "buttonId": f"ACK {alert_id}",
+            "buttonText": "✅ Acknowledge"
+        })
+
     results = {"enabled": True, "sent": 0, "failed": 0, "details": []}
     for phone in target:
-        ok = send_whatsapp_message(phone, message, alert_id=alert_id, event_type="NEW")
+        ok = send_whatsapp_message(phone, message, alert_id=alert_id, event_type="NEW", buttons=buttons)
         results["sent" if ok else "failed"] += 1
         results["details"].append({"to": phone, "success": ok})
 
@@ -538,7 +577,7 @@ def send_escalation_notification(
     alert_id: int = None,
 ) -> dict:
     """Send a WhatsApp escalation alert. Idempotent with ESCALATION key.
-    Recipient resolution is strict: assigned doctor only.
+    Uses explicit recipients when provided; otherwise falls back to assigned doctor.
     """
     if not WHATSAPP_ENABLED:
         return {"enabled": False, "sent": 0, "failed": 0}
@@ -547,12 +586,22 @@ def send_escalation_notification(
         logger.debug("WhatsApp alerts are paused. Skipping escalation for patient %s.", patient_id)
         return {"enabled": True, "paused": True, "sent": 0, "failed": 0}
 
-    # Strict recipient policy: assigned doctor only.
-    target = get_patient_recipients(patient_id)
+    if recipients:
+        # Explicit escalation recipient list from caller (e.g., same-spec doctors).
+        target = []
+        seen = set()
+        for phone in recipients:
+            normalized = _normalize_phone(phone)
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                target.append(normalized)
+    else:
+        # Fallback policy: patient's assigned doctor.
+        target = get_patient_recipients(patient_id)
 
     if not target:
-        logger.warning("No assigned doctor recipient configured. Skipping escalation.")
-        return {"enabled": True, "sent": 0, "failed": 0, "reason": "no_assigned_doctor_recipient"}
+        logger.warning("No escalation recipient configured. Skipping escalation.")
+        return {"enabled": True, "sent": 0, "failed": 0, "reason": "no_escalation_recipient"}
 
     message = _format_escalation_message(
         alert_type=alert_type,
@@ -561,9 +610,17 @@ def send_escalation_notification(
         room_number=room_number,
     )
 
+    # v5.2: Add interactive Acknowledge button
+    buttons = []
+    if alert_id:
+        buttons.append({
+            "buttonId": f"ACK {alert_id}",
+            "buttonText": "🚨 Resolve"
+        })
+
     results = {"enabled": True, "sent": 0, "failed": 0, "details": []}
     for phone in target:
-        ok = send_whatsapp_message(phone, message, alert_id=alert_id, event_type="ESCALATION")
+        ok = send_whatsapp_message(phone, message, alert_id=alert_id, event_type="ESCALATION", buttons=buttons)
         results["sent" if ok else "failed"] += 1
         results["details"].append({"to": phone, "success": ok})
 
@@ -598,7 +655,15 @@ def send_test_message(phone: str = None) -> dict:
         "━━━━━━━━━━━━━━━━━━━━━━"
     )
 
-    ok = send_whatsapp_message(target_phone, body)
+    # v5.2: Add test button
+    buttons = [
+        {
+            "buttonId": "TEST_ACK",
+            "buttonText": "🧪 Verify Handshake"
+        }
+    ]
+
+    ok = send_whatsapp_message(target_phone, body, buttons=buttons)
     return {"success": ok, "to": target_phone}
 
 

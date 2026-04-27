@@ -226,6 +226,7 @@ def get_user_by_username(db: Session, username: str) -> Optional[models.User]:
 
 def create_user(db: Session, username: str, password: str, role: str,
                 doctor_id: int = None, nurse_id: int = None) -> models.User:
+    from sqlalchemy.exc import IntegrityError
     user = models.User(
         username=username,
         password_hash=hash_password(password),
@@ -234,6 +235,10 @@ def create_user(db: Session, username: str, password: str, role: str,
         nurse_id=nurse_id,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Username already taken")
     db.refresh(user)
     return user

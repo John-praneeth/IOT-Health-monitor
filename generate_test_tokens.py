@@ -8,6 +8,7 @@ EXPIRED_TOKEN -> already expired
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os
+import uuid
 
 from dotenv import load_dotenv
 from jose import jwt
@@ -25,17 +26,21 @@ if not SECRET_KEY:
 ALGORITHM = "HS256"
 
 
-# Claims that match backend expectations (backend reads `sub`).
-BASE_PAYLOAD = {
-    "sub": "test_user",
-    "user_id": "test_user",
-    "role": "ADMIN",
-}
+# Claims that match backend expectations (backend reads `sub` and token type).
+DEFAULT_SUBJECT = os.getenv("TOKEN_SUB", "admin")
+DEFAULT_ROLE = os.getenv("TOKEN_ROLE", "ADMIN")
 
 
-def build_token(expires_delta: timedelta) -> str:
-    payload = BASE_PAYLOAD.copy()
-    payload["exp"] = datetime.now(timezone.utc) + expires_delta
+def build_token(expires_delta: timedelta, *, subject: str = DEFAULT_SUBJECT, role: str = DEFAULT_ROLE) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": subject,
+        "role": role,
+        "iat": now,
+        "exp": now + expires_delta,
+        "jti": uuid.uuid4().hex,
+        "typ": "access",
+    }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -45,6 +50,7 @@ def main() -> None:
 
     print(f'VALID_TOKEN = "{valid_token}"')
     print(f'EXPIRED_TOKEN = "{expired_token}"')
+    print(f'SUBJECT = "{DEFAULT_SUBJECT}"')
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import main
 import models
 import whatsapp_notifier
 
@@ -11,7 +12,7 @@ def _login_headers(client, username: str, password: str):
 
 
 def _admin_headers(client):
-    return _login_headers(client, "admin", "admin123")
+    return _login_headers(client, "admin", "Admin123!")
 
 
 def _create_doctor_user(client, admin_headers, username: str, phone: str):
@@ -23,13 +24,13 @@ def _create_doctor_user(client, admin_headers, username: str, phone: str):
             "phone": phone,
             "email": f"{username}@example.com",
             "username": username,
-            "password": "password123",
+            "password": "Password123!",
         },
         headers=admin_headers,
     )
     assert resp.status_code == 200
     doctor_id = resp.json()["doctor_id"]
-    headers = _login_headers(client, username, "password123")
+    headers = _login_headers(client, username, "Password123!")
     me = client.get("/auth/me", headers=headers)
     assert me.status_code == 200
     return {"doctor_id": doctor_id, "headers": headers, "user_id": me.json()["user_id"]}
@@ -44,23 +45,24 @@ def _create_nurse_user(client, admin_headers, username: str, phone: str):
             "phone": phone,
             "email": f"{username}@example.com",
             "username": username,
-            "password": "password123",
+            "password": "Password123!",
         },
         headers=admin_headers,
     )
     assert resp.status_code == 200
     nurse_id = resp.json()["nurse_id"]
-    headers = _login_headers(client, username, "password123")
+    headers = _login_headers(client, username, "Password123!")
     return {"nurse_id": nurse_id, "headers": headers}
 
 
-def _create_patient(client, actor_headers, doctor_id: int, nurse_id: int | None = None):
+def _create_patient(client, actor_headers, doctor_id: int, nurse_id: int | None = None, hospital_id: int | None = None):
     body = {
         "name": "Patient One",
         "age": 45,
         "room_number": "A-101",
         "assigned_doctor": doctor_id,
         "assigned_nurse": nurse_id,
+        "hospital_id": hospital_id,
     }
     resp = client.post("/patients", json=body, headers=actor_headers)
     assert resp.status_code == 200
@@ -98,37 +100,81 @@ def test_only_assigned_doctor_can_acknowledge(client, db):
     assert data["acknowledged_by"] == assigned["user_id"]
 
 
-def test_nurse_cannot_acknowledge(client, db):
+def test_authorized_nurse_can_acknowledge(client, db):
     admin = _admin_headers(client)
-    assigned = _create_doctor_user(client, admin, "doc_for_nurse_test", "919900000002")
-    nurse = _create_nurse_user(client, admin, "nurse_no_ack", "919900000003")
-    patient_id = _create_patient(client, admin, assigned["doctor_id"], nurse["nurse_id"])
+    # Hospital 1
+    h1_resp = client.post("/hospitals", json={"name": "H1", "location": "L1"}, headers=admin)
+    h1_id = h1_resp.json()["hospital_id"]
+    
+    assigned_doc = _create_doctor_user(client, admin, "doc_h1", "919900000002")
+    # Update doctor hospital
+    client.put(f"/doctors/{assigned_doc['doctor_id']}", json={"name": "Doc H1", "hospital_id": h1_id}, headers=admin)
+    
+    nurse = _create_nurse_user(client, admin, "nurse_h1", "919900000003")
+    # Update nurse hospital
+    client.put(f"/nurses/{nurse['nurse_id']}", json={"name": "Nurse H1", "hospital_id": h1_id}, headers=admin)
+    
+    patient_id = _create_patient(client, admin, assigned_doc["doctor_id"], nurse["nurse_id"], hospital_id=h1_id)
     alert_id = _create_pending_alert(db, patient_id)
 
+    # Nurse at same hospital can acknowledge
     resp = client.patch(
         f"/alerts/{alert_id}/acknowledge",
         json={"acknowledged_by": 1},
         headers=nurse["headers"],
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ACKNOWLEDGED"
 
 
-def test_other_doctor_cannot_acknowledge(client, db):
+def test_other_doctor_at_same_hospital_can_acknowledge(client, db):
     admin = _admin_headers(client)
-    assigned = _create_doctor_user(client, admin, "doc_owner", "919900000004")
-    other = _create_doctor_user(client, admin, "doc_other", "919900000005")
-    patient_id = _create_patient(client, admin, assigned["doctor_id"])
+    # Hospital 1
+    h1_resp = client.post("/hospitals", json={"name": "H1_Doc", "location": "L1"}, headers=admin)
+    h1_id = h1_resp.json()["hospital_id"]
+    
+    assigned_doc = _create_doctor_user(client, admin, "doc_assigned", "919900000004")
+    client.put(f"/doctors/{assigned_doc['doctor_id']}", json={"name": "Doc Assigned", "hospital_id": h1_id}, headers=admin)
+    
+    other_doc = _create_doctor_user(client, admin, "doc_other", "919900000005")
+    client.put(f"/doctors/{other_doc['doctor_id']}", json={"name": "Doc Other", "hospital_id": h1_id}, headers=admin)
+    
+    patient_id = _create_patient(client, admin, assigned_doc["doctor_id"], hospital_id=h1_id)
     alert_id = _create_pending_alert(db, patient_id)
 
+    # Other doctor at same hospital can acknowledge
     resp = client.patch(
         f"/alerts/{alert_id}/acknowledge",
         json={"acknowledged_by": 1},
-        headers=other["headers"],
+        headers=other_doc["headers"],
+    )
+    assert resp.status_code == 200
+
+
+def test_staff_at_different_hospital_cannot_acknowledge(client, db):
+    admin = _admin_headers(client)
+    # Hospital 1
+    h1 = client.post("/hospitals", json={"name": "H1", "location": "L1"}, headers=admin).json()["hospital_id"]
+    # Hospital 2
+    h2 = client.post("/hospitals", json={"name": "H2", "location": "L2"}, headers=admin).json()["hospital_id"]
+    
+    doc_h1 = _create_doctor_user(client, admin, "doc_h1_only", "919900000100")
+    client.put(f"/doctors/{doc_h1['doctor_id']}", json={"name": "Doc H1", "hospital_id": h1}, headers=admin)
+    
+    doc_h2 = _create_doctor_user(client, admin, "doc_h2_only", "919900000200")
+    client.put(f"/doctors/{doc_h2['doctor_id']}", json={"name": "Doc H2", "hospital_id": h2}, headers=admin)
+    
+    patient_h1 = _create_patient(client, admin, doc_h1["doctor_id"], hospital_id=h1)
+    alert_id = _create_pending_alert(db, patient_h1)
+
+    # Doctor at DIFFERENT hospital cannot acknowledge
+    resp = client.patch(
+        f"/alerts/{alert_id}/acknowledge",
+        json={"acknowledged_by": 1},
+        headers=doc_h2["headers"],
     )
     assert resp.status_code == 403
-    payload = resp.json()
-    detail = payload.get("detail") or payload.get("message") or str(payload)
-    assert "Not authorized to acknowledge this alert" in detail
+
 
 
 def test_patient_access_control(client):
@@ -209,9 +255,8 @@ def test_alert_not_sent_to_nurse(monkeypatch):
     monkeypatch.setattr(
         whatsapp_notifier,
         "send_whatsapp_message",
-        lambda phone, body, alert_id=None, event_type="NEW", retries=3: sent_to.append(phone) or True,
+        lambda phone, body, alert_id=None, event_type="NEW", retries=3, buttons=None: sent_to.append(phone) or True,
     )
-
     whatsapp_notifier.send_alert_notification(
         alert_type="LOW_SPO2",
         patient_name="P1",
@@ -224,6 +269,35 @@ def test_alert_not_sent_to_nurse(monkeypatch):
     )
 
     assert sent_to == ["919900000011"]
+
+
+def test_escalation_uses_explicit_recipients(monkeypatch):
+    sent_to = []
+
+    monkeypatch.setattr(whatsapp_notifier, "WHATSAPP_ENABLED", True)
+    monkeypatch.setattr(whatsapp_notifier, "is_alerts_paused", lambda: False)
+    monkeypatch.setattr(
+        whatsapp_notifier,
+        "get_patient_recipients",
+        lambda patient_id: ["919900000099"],
+    )
+    monkeypatch.setattr(
+        whatsapp_notifier,
+        "send_whatsapp_message",
+        lambda phone, body, alert_id=None, event_type="NEW", retries=3, buttons=None: sent_to.append(phone) or True,
+    )
+    result = whatsapp_notifier.send_escalation_notification(
+        alert_type="LOW_SPO2",
+        patient_name="P1",
+        patient_id=1,
+        room_number="A-1",
+        recipients=["+919900000011", "919900000012", "919900000011"],
+        alert_id=101,
+    )
+
+    assert result["sent"] == 2
+    assert result["failed"] == 0
+    assert sent_to == ["919900000011", "919900000012"]
 
 
 def test_invalid_vitals_rejected(client):
@@ -242,3 +316,25 @@ def test_invalid_vitals_rejected(client):
         headers=admin,
     )
     assert resp.status_code == 422
+
+
+def test_whatsapp_webhook_rejects_invalid_secret(monkeypatch, client):
+    monkeypatch.setattr(main, "WHATSAPP_WEBHOOK_SECRET", "super-secret")
+
+    resp = client.post(
+        "/whatsapp/webhook",
+        json={"typeWebhook": "incomingMessageReceived"},
+    )
+    assert resp.status_code == 403
+
+
+def test_whatsapp_webhook_accepts_valid_secret(monkeypatch, client):
+    monkeypatch.setattr(main, "WHATSAPP_WEBHOOK_SECRET", "super-secret")
+
+    resp = client.post(
+        "/whatsapp/webhook",
+        json={"typeWebhook": "statusInstanceChanged"},
+        headers={"x-whatsapp-webhook-secret": "super-secret"},
+    )
+    assert resp.status_code == 200
+    assert resp.json().get("status") == "ignored"

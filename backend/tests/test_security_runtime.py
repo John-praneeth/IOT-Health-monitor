@@ -7,7 +7,7 @@ import main
 from rate_limiter import limiter
 
 
-def _login(client, username="admin", password="admin123"):
+def _login(client, username="admin", password="Admin123!"):
     return client.post("/auth/login", json={"username": username, "password": password})
 
 
@@ -53,7 +53,7 @@ def test_logout_invalidates_token(client):
 
 def test_failed_login_logging(client, caplog):
     caplog.set_level(logging.WARNING)
-    resp = client.post("/auth/login", json={"username": "admin", "password": "bad-pass"})
+    resp = client.post("/auth/login", json={"username": "admin", "password": "Bad-pass1"})
     assert resp.status_code == 401
 
     events = []
@@ -84,5 +84,5 @@ def test_bruteforce_block(client):
         assert resp.status_code == 401
 
     limiter.reset()  # isolate brute-force block from slowapi quota
-    blocked = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+    blocked = client.post("/auth/login", json={"username": "admin", "password": "Admin123!"})
     assert blocked.status_code == 429

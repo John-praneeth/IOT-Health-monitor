@@ -25,17 +25,18 @@ export default function Vitals() {
 
   const load = useCallback(async () => {
     try {
-      const params = { limit: 100 };
-      if (filter)       params.patient_id = parseInt(filter);
-      if (doctorFilter) params.doctor_id  = parseInt(doctorFilter);
-      const [vRes, pRes, dRes] = await Promise.all([
-        getVitals(params),
+      const results = await Promise.allSettled([
+        getVitals({ limit: filter ? 200 : 100, patient_id: filter || undefined, doctor_id: doctorFilter || undefined }),
         getPatients(),
         getDoctors(),
       ]);
-      setVitals(vRes.data);
-      setPatients(pRes.data);
-      setDoctors(dRes.data);
+
+      const [vRes, pRes, dRes] = results;
+
+      if (vRes.status === 'fulfilled') setVitals(vRes.value.data);
+      if (pRes.status === 'fulfilled') setPatients(pRes.value.data);
+      if (dRes.status === 'fulfilled') setDoctors(dRes.value.data);
+
       setLastRefresh(new Date().toLocaleTimeString());
     } catch (err) {
       console.error(err);
@@ -50,56 +51,95 @@ export default function Vitals() {
     return () => clearInterval(id);
   }, [load]);
 
+  const filterRef = React.useRef(filter);
+  const docFilterRef = React.useRef(doctorFilter);
+  const patientsRef = React.useRef(patients);
+  useEffect(() => { filterRef.current = filter; }, [filter]);
+  useEffect(() => { docFilterRef.current = doctorFilter; }, [doctorFilter]);
+  useEffect(() => { patientsRef.current = patients; }, [patients]);
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const ws = new WebSocket(buildVitalsWsUrl(token));
+    let ws = null;
+    let reconnectTimer = null;
+    let isMounted = true;
 
-    ws.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(event.data);
-        if (!Array.isArray(parsed) || parsed.length === 0) return;
+    const connect = () => {
+      if (!isMounted) return;
+      ws = new WebSocket(buildVitalsWsUrl(token));
 
-        const incoming = parsed
-          .filter(v => v?.patient_id != null)
-          .filter(v => !filter || String(v.patient_id) === String(filter))
-          .filter(v => {
-            if (!doctorFilter) return true;
-            const patient = patients.find(p => p.patient_id === v.patient_id);
-            return patient && String(patient.assigned_doctor) === String(doctorFilter);
-          })
-          .map(v => ({
-            ...v,
-            vital_id: v.vital_id ?? `ws-${v.patient_id}-${v.timestamp}`,
-          }));
+      ws.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (!Array.isArray(parsed) || parsed.length === 0) return;
 
-        if (incoming.length === 0) return;
+          const currentFilter = filterRef.current;
+          const currentDocFilter = docFilterRef.current;
+          const currentPatients = patientsRef.current;
 
-        setVitals(prev => {
-          const merged = [...incoming, ...prev];
-          const seen = new Set();
-          const deduped = [];
-          for (const row of merged) {
-            const key = `${row.patient_id}-${row.timestamp}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              deduped.push(row);
-            }
-            if (deduped.length >= 100) break;
+          // Create a quick lookup for doctor filtering
+          const patientDocMap = {};
+          if (currentDocFilter) {
+            currentPatients.forEach(p => patientDocMap[p.patient_id] = p.assigned_doctor);
           }
-          return deduped;
-        });
-        setLastRefresh(new Date().toLocaleTimeString());
-      } catch {
-        // Ignore keepalive/invalid payloads.
-      }
+
+          const incoming = parsed
+            .filter(v => v?.patient_id != null)
+            .filter(v => !currentFilter || String(v.patient_id) === String(currentFilter))
+            .filter(v => {
+              if (!currentDocFilter) return true;
+              return String(patientDocMap[v.patient_id]) === String(currentDocFilter);
+            })
+            .map(v => ({
+              ...v,
+              vital_id: v.vital_id ?? `ws-${v.patient_id}-${v.timestamp}`,
+            }));
+
+          if (incoming.length === 0) return;
+
+          setVitals(prev => {
+            const merged = [...incoming, ...prev];
+            const seen = new Set();
+            const deduped = [];
+            for (const row of merged) {
+              const key = `${row.patient_id}-${row.timestamp}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                deduped.push(row);
+              }
+              if (deduped.length >= 100) break;
+            }
+            return deduped;
+          });
+          setLastRefresh(new Date().toLocaleTimeString());
+        } catch {
+          // Ignore keepalive/invalid payloads.
+        }
+      };
+
+      ws.onclose = () => {
+        if (isMounted) {
+          reconnectTimer = setTimeout(connect, 3000);
+        }
+      };
+
+      ws.onerror = () => {
+        if (ws.readyState === 1) ws.close();
+      };
     };
+
+    connect();
 
     return () => {
-      try { ws.close(); } catch { /* no-op */ }
+      isMounted = false;
+      clearTimeout(reconnectTimer);
+      if (ws) {
+        try { ws.close(); } catch { /* no-op */ }
+      }
     };
-  }, [filter, doctorFilter, patients]);
+  }, []); // Only connect once, relying on refs for latest state
 
   const patientName = (id) => patients.find(p => p.patient_id === id)?.name || `Patient ${id}`;
 
@@ -119,23 +159,26 @@ export default function Vitals() {
       {
         label: 'Heart Rate (bpm)',
         data: chartVitals.map(v => v.heart_rate),
-        borderColor: '#f87171',
-        backgroundColor: 'rgba(248,113,113,0.1)',
-        tension: 0.3, fill: true,
+        borderColor: '#f43f5e',
+        backgroundColor: 'rgba(244,63,94,0.1)',
+        tension: 0.4, fill: true,
+        pointRadius: 2,
       },
       {
         label: 'SpO₂ (%)',
         data: chartVitals.map(v => v.spo2),
         borderColor: '#34d399',
         backgroundColor: 'rgba(52,211,153,0.1)',
-        tension: 0.3, fill: true,
+        tension: 0.4, fill: true,
+        pointRadius: 2,
       },
       {
         label: 'Temperature (°F)',
         data: chartVitals.map(v => v.temperature),
         borderColor: '#fbbf24',
         backgroundColor: 'rgba(251,191,36,0.1)',
-        tension: 0.3, fill: true,
+        tension: 0.4, fill: true,
+        pointRadius: 2,
       },
     ],
   };
@@ -145,78 +188,89 @@ export default function Vitals() {
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { labels: { color: '#e2e8f0' } },
+      legend: { labels: { color: '#94a3b8', font: { weight: '600' } } },
       title: {
         display: true,
-        text: filter ? `Trend: ${patientName(parseInt(filter))}` : 'Vitals Trend (All Patients)',
-        color: '#e2e8f0',
+        text: filter ? `Telemetry Feed: ${patientName(parseInt(filter))}` : 'Global Vitals Telemetry',
+        color: '#f1f5f9',
+        font: { size: 16, weight: '700', family: "'Space Grotesk', sans-serif" }
       },
     },
     scales: {
-      x: { ticks: { color: '#64748b', maxTicksLimit: 15 }, grid: { color: '#1e293b' } },
-      y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+      x: { 
+        ticks: { color: '#64748b', maxTicksLimit: 15 }, 
+        grid: { color: 'rgba(255,255,255,0.03)' } 
+      },
+      y: { 
+        ticks: { color: '#64748b' }, 
+        grid: { color: 'rgba(255,255,255,0.03)' },
+        suggestedMin: 40,
+        suggestedMax: 120
+      },
     },
+    plugins: {
+      autocolors: false,
+      legend: { labels: { color: '#94a3b8', font: { weight: '600' } } },
+      title: {
+        display: true,
+        text: filter ? `Clinical Telemetry: ${patientName(parseInt(filter))}` : 'Registry Telemetry Stream',
+        color: '#f1f5f9',
+        font: { size: 16, weight: '700', family: "'Space Grotesk', sans-serif" }
+      },
+    }
   };
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>Vitals</h1>
-        <p>
-          Most recent 100 readings &nbsp;
-          <span className="live-tag">
-            <span className="live-dot" />
-            AUTO-REFRESH {lastRefresh && `· ${lastRefresh}`}
-          </span>
-        </p>
-      </div>
-
-      <div className="graphic-banner">
-        <div className="banner-title">Signal Intelligence View</div>
-        <div className="banner-subtitle">Vitals trends with anomaly highlighting for fast clinical decisions.</div>
-        <div className="chip-row">
-          <span className="status-chip">Heart Rate</span>
-          <span className="status-chip">SpO2</span>
-          <span className="status-chip">Temperature</span>
+    <div style={{ animation: 'reveal 0.4s ease-out' }}>
+      <div className="main-topbar">
+        <div>
+          <div className="main-title">Clinical Telemetry Feed</div>
+          <div className="main-subtitle">
+             <span className="live-tag">
+               <span className="live-dot" />
+               RECEIVING {lastRefresh && `· ${lastRefresh}`}
+             </span>
+          </div>
+        </div>
+        <div className="topbar-actions">
+           <button
+             className={`btn btn-sm ${showChart ? 'btn-primary' : ''}`}
+             style={{ background: showChart ? 'var(--primary)' : 'rgba(255,255,255,0.05)', color: showChart ? '#000' : '#e2e8f0', border: '1px solid var(--stroke)' }}
+             onClick={() => setShowChart(!showChart)}
+           >
+             {showChart ? '📊 Hide Analytics' : '📈 Show Analytics'}
+           </button>
+           <button className="btn btn-primary btn-sm" onClick={load}>⟳ Refresh Feed</button>
         </div>
       </div>
 
-      <div className="filter-row">
+      <div className="filter-row" style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: '#64748b', fontWeight: 800 }}>SOURCE FILTER:</span>
         <select
-          style={{ background:'#1e293b', border:'1px solid #334155', color:'#e2e8f0',
-                   borderRadius:8, padding:'8px 12px', fontSize:13 }}
+          style={{ background:'rgba(0,0,0,0.2)', border:'1px solid rgba(255,255,255,0.1)', color:'#e2e8f0',
+                   borderRadius:8, padding:'6px 12px', fontSize:13, outline: 'none' }}
           value={filter}
           onChange={e => setFilter(e.target.value)}
         >
-          <option value="">All Patients</option>
+          <option value="">All Active Patients</option>
           {patients.map(p => <option key={p.patient_id} value={p.patient_id}>{p.name}</option>)}
         </select>
         <select
-          style={{ background:'#1e293b', border:'1px solid #334155', color:'#e2e8f0',
-                   borderRadius:8, padding:'8px 12px', fontSize:13 }}
+          style={{ background:'rgba(0,0,0,0.2)', border:'1px solid rgba(255,255,255,0.1)', color:'#e2e8f0',
+                   borderRadius:8, padding:'6px 12px', fontSize:13, outline: 'none' }}
           value={doctorFilter}
           onChange={e => setDoctorFilter(e.target.value)}
         >
-          <option value="">All Doctors</option>
+          <option value="">All Physician Groups</option>
           {doctors.map(d => <option key={d.doctor_id} value={d.doctor_id}>{d.name}</option>)}
         </select>
-        <button className="btn btn-primary btn-sm" onClick={load}>⟳ Refresh</button>
-        <button
-          className={`btn btn-sm ${showChart ? 'btn-primary' : ''}`}
-          style={{ background: showChart ? '#3b82f6' : '#1e293b', color: '#e2e8f0',
-                   border: '1px solid #334155', borderRadius: 8, padding: '8px 14px',
-                   cursor: 'pointer', fontSize: 13 }}
-          onClick={() => setShowChart(!showChart)}
-        >
-          📈 {showChart ? 'Hide' : 'View'} Trends
-        </button>
       </div>
 
       {/* ── Chart ────────────────────────────────────────────────── */}
       {showChart && vitals.length > 0 && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div className="card-header"><h2>📈 Vitals Trend</h2></div>
-              <div className="chart-3d-shell" style={{ height: 320, padding: '8px 16px 16px', margin: '0 16px 16px' }}>
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div className="card-header"><h2>Live Vitals Trend Analysis</h2></div>
+          <div style={{ height: 320, padding: '16px 24px 24px' }}>
             <Line data={chartData} options={chartOptions} />
           </div>
         </div>
@@ -224,43 +278,53 @@ export default function Vitals() {
 
       <div className="card">
         <div className="card-header">
-          <h2>Vitals Log</h2>
-          <span style={{ fontSize:12, color:'#64748b' }}>{vitals.length} records</span>
+          <h2>Telemetry Log</h2>
+          <span style={{ fontSize:11, color:'#64748b', fontWeight: 800 }}>{vitals.length} SEQUENTIAL RECORDS</span>
         </div>
         {loading ? <div className="spinner" /> : (
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th><th>Patient</th><th>Heart Rate</th>
-                <th>SpO₂</th><th>Temp (°F)</th><th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vitals.length === 0 && (
-                <tr><td colSpan={6} className="empty-state">No vitals yet. Start the scheduler.</td></tr>
-              )}
-              {vitals.map(v => (
-                <tr key={v.vital_id} className={rowClass(v)}>
-                  <td>{v.timestamp ? toLocal(v.timestamp).toLocaleTimeString() : '—'}</td>
-                  <td>{patientName(v.patient_id)}</td>
-                  <td style={{ color: (v.heart_rate > 110 || v.heart_rate < 50) ? '#f87171' : '#34d399' }}>
-                    {v.heart_rate} bpm
-                  </td>
-                  <td style={{ color: v.spo2 < 90 ? '#f87171' : '#34d399' }}>
-                    {v.spo2}%
-                  </td>
-                  <td style={{ color: (v.temperature > 101 || v.temperature < 96) ? '#fbbf24' : '#e2e8f0' }}>
-                    {v.temperature}°F
-                  </td>
-                  <td>
-                    {rowClass(v) === 'vital-critical' && <span className="badge badge-red">Critical</span>}
-                    {rowClass(v) === 'vital-warning'  && <span className="badge badge-amber">Warning</span>}
-                    {rowClass(v) === ''               && <span className="badge badge-green">Normal</span>}
-                  </td>
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th><th>Patient Identity</th><th>Pulse (BPM)</th>
+                  <th>SpO₂ (%)</th><th>Temp (°F)</th><th>Diagnostic State</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {vitals.length === 0 && (
+                  <tr><td colSpan={6} className="empty-state">No real-time telemetry received yet.</td></tr>
+                )}
+                {vitals.map(v => (
+                  <tr key={v.vital_id}>
+                    <td><span style={{ color: '#64748b', fontWeight: 600 }}>{v.timestamp ? toLocal(v.timestamp).toLocaleTimeString() : '—'}</span></td>
+                    <td>
+                      <strong>{patientName(v.patient_id)}</strong>
+                      {v.source === 'thingspeak' && !v.is_fallback && (
+                        <span style={{ marginLeft: 8, fontSize: 8, padding: '2px 4px', borderRadius: 4, background: 'rgba(34, 211, 238, 0.1)', color: '#22d3ee', border: '1px solid rgba(34, 211, 238, 0.2)' }}>IOT</span>
+                      )}
+                    </td>
+                    <td style={{ fontWeight: 800, color: (v.heart_rate > 110 || v.heart_rate < 50) ? '#f43f5e' : '#34d399' }}>
+                      {v.heart_rate}
+                    </td>
+                    <td style={{ fontWeight: 800, color: v.spo2 < 90 ? '#f43f5e' : '#34d399' }}>
+                      {v.spo2}%
+                    </td>
+                    <td style={{ fontWeight: 800, color: (v.temperature > 101 || v.temperature < 96) ? '#fbbf24' : 'inherit' }}>
+                      {v.temperature}°
+                    </td>
+                    <td>
+                      <span className={`badge ${rowClass(v)==='vital-critical'?'badge-red':rowClass(v)==='vital-warning'?'badge-amber':'badge-green'}`}>
+                        {rowClass(v) === 'vital-critical' ? 'CRITICAL' : rowClass(v) === 'vital-warning' ? 'WARNING' : 'STABLE'}
+                      </span>
+                      {v.source === 'thingspeak' && !v.is_fallback && (
+                        <span style={{ fontSize: 9, color: '#22d3ee', marginLeft: 8, fontWeight: 700 }}>✓ HW</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

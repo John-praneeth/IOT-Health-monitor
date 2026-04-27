@@ -1,12 +1,21 @@
-const rawApiBase = (process.env.REACT_APP_API_BASE_URL || '').trim();
+const getRuntimeApiBase = () => {
+  if (typeof window === 'undefined') return '';
+  const params = new URLSearchParams(window.location.search);
+  return params.get('api') || '';
+};
+
+const rawApiBase = (getRuntimeApiBase() || process.env.REACT_APP_API_BASE_URL || '').trim();
 const rawWsBase = (process.env.REACT_APP_WS_BASE_URL || '').trim();
 
 const isVercelProdHost =
   typeof window !== 'undefined' && /(^|\.)iot-healthcare\.vercel\.app$/i.test(window.location.host);
 
+const isLocalDevHost =
+  typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+
 const defaultApiBase = isVercelProdHost
   ? 'https://iot-healthcare-backend.onrender.com'
-  : '/api';
+  : (isLocalDevHost ? 'http://localhost:8000' : '/api');
 
 export const API_BASE_URL = rawApiBase || defaultApiBase;
 

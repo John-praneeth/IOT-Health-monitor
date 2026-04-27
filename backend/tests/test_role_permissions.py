@@ -8,7 +8,7 @@ import crud
 
 
 def _admin_headers(client):
-    resp = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+    resp = client.post("/auth/login", json={"username": "admin", "password": "Admin123!"})
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
@@ -16,17 +16,17 @@ def _admin_headers(client):
 def _register_and_login(client, username, role, doctor_id=None, nurse_id=None):
     """Helper: register + login, return auth headers."""
     if role == "ADMIN":
-        admin_resp = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+        admin_resp = client.post("/auth/login", json={"username": "admin", "password": "Admin123!"})
         token = admin_resp.json()["access_token"]
         return {"Authorization": f"Bearer {token}"}
 
-    body = {"username": username, "password": "password123", "role": role}
+    body = {"username": username, "password": "Password123!", "role": role}
     if doctor_id:
         body["doctor_id"] = doctor_id
     if nurse_id:
         body["nurse_id"] = nurse_id
     client.post("/auth/register", json=body, headers=_admin_headers(client))
-    resp = client.post("/auth/login", json={"username": username, "password": "password123"})
+    resp = client.post("/auth/login", json={"username": username, "password": "Password123!"})
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
