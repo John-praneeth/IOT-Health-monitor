@@ -60,7 +60,7 @@ API.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const { data } = await API.post('/auth/refresh', {}, { withCredentials: true });
+        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true });
         const newToken = data.access_token;
         localStorage.setItem('token', newToken);
         if (data.role) localStorage.setItem('role', data.role);

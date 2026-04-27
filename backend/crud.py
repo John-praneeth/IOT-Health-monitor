@@ -607,7 +607,7 @@ def create_patient(db: Session, patient: schemas.PatientCreate, user_id: int):
 
 
 def update_patient(db: Session, patient_id: int, payload: schemas.PatientUpdate, user_id: int):
-    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).with_for_update().first()
     if not patient:
         return None
     _validate_patient_links(
@@ -638,7 +638,7 @@ def delete_patient(db: Session, patient_id: int, user_id: int):
     """Hard delete: physically remove patient and all their related data from the DB.
     Cascades: vitals, alerts, escalations, notifications, chat messages.
     """
-    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).with_for_update().first()
     if patient:
         # Get all alerts for this patient to delete related escalations/notifications
         alerts = db.query(models.Alert).filter(models.Alert.patient_id == patient_id).all()
@@ -676,7 +676,7 @@ def delete_patient(db: Session, patient_id: int, user_id: int):
 
 
 def assign_doctor(db: Session, patient_id: int, doctor_id: int | None):
-    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).with_for_update().first()
     if not patient:
         return None
     if doctor_id is None:
@@ -706,7 +706,7 @@ def assign_doctor(db: Session, patient_id: int, doctor_id: int | None):
 
 
 def assign_nurse(db: Session, patient_id: int, nurse_id: int | None):
-    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).first()
+    patient = db.query(models.Patient).filter(models.Patient.patient_id == patient_id).with_for_update().first()
     if not patient:
         return None
     if nurse_id is None:

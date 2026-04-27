@@ -139,7 +139,7 @@ export default function Vitals() {
         try { ws.close(); } catch { /* no-op */ }
       }
     };
-  }, [filter, doctorFilter, patients]);
+  }, []); // Only connect once, relying on refs for latest state
 
   const patientName = (id) => patients.find(p => p.patient_id === id)?.name || `Patient ${id}`;
 
