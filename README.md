@@ -641,3 +641,77 @@ cd frontend && npm run build
 This project currently has no explicit license file.
 
 Add a `LICENSE` file (for example MIT, Apache-2.0, or proprietary) before public/open-source distribution.
+
+---
+
+## Appendix: Guidelines for Preparing the Project Report
+
+### 1. Arrangement of Contents
+The sequence in which the project report material should be arranged and bound should be as follows:
+
+1. Cover Page & Title Page
+2. Bonafide Certificate
+3. Abstract
+4. Table of Contents
+5. List of Tables
+6. List of Figures
+7. List of Symbols, Abbreviations and Nomenclature
+8. Chapters
+9. Appendices
+10. References
+
+*Note: Tables and figures shall be introduced at the appropriate places.*
+
+### 2. Page Dimension and Binding Specifications
+The dimension of the project report should be in **A4 size**. The project report should be bound using a flexible cover of thick white art paper. The cover should be printed in black letters and the text font/inking should be identical.
+
+### 3. Preparation Format
+
+#### 3.1. Cover Page & Title Page
+A specimen copy of the Cover page & Title page of the project report are given in Appendix 1.
+
+#### 3.2. Bonafide Certificate
+The Bonafide Certificate shall be in **double line spacing** using **Font Style: Times New Roman** and **Font Size: 14**, as per the format in Appendix 2. The certificate shall carry the supervisor's signature and shall be followed by the supervisor's name, academic designation (excluding administrative responsibilities), department, and full address of the institution where the supervisor has guided the student.
+
+The term **"SUPERVISOR"** must be typed in capital letters between the supervisor's name and academic designation.
+
+#### 3.3. Abstract
+The Abstract should be a **one-page synopsis** of the project report, typed with **one and a half line spacing**.
+**Font Style:** Times New Roman, **Font Size:** 12.
+
+#### 3.4. Table of Contents
+The table of contents should list all material following it as well as any material which precedes it. The Title Page and Bonafide Certificate will not find a place among the items listed in the Table of Contents, but the page numbers of which are in lower case Roman letters. One and a half spacing should be adopted for typing the matter under this head. A specimen copy of the Table of Contents of the project report is given in Appendix 3.
+
+#### 3.5. List of Tables
+The list should use exactly the same captions as they appear above the tables in the text. One and a half spacing should be adopted for typing the matter under this head.
+
+#### 3.6. List of Figures
+The list should use exactly the same captions as they appear below the figures in the text. One and a half spacing should be adopted for typing the matter under this head.
+
+#### 3.7. List of Symbols, Abbreviations and Nomenclature
+One and a half spacing should be adopted for typing the matter under this head. Standard symbols, abbreviations, etc., should be used.
+
+#### 3.8. Chapters
+The chapters may be broadly divided into 3 parts:
+1. Introductory chapter
+2. Chapters developing the main theme of the project work
+3. Conclusion
+
+The main theme will be divided into several chapters, and each chapter may be further divided into several divisions and sub-divisions. Each chapter should be given an appropriate title. Tables and figures in a chapter should be placed in the immediate vicinity of the reference where they are cited.
+
+Footnotes should be used sparingly. They should be typed single-spaced and placed directly underneath the very same page which refers to the material they annotate.
+
+#### 3.9. Appendices
+Appendices are provided to give supplementary information which, if included in the main text, may serve as a distraction and cloud the central theme. Appendices should be numbered using Arabic numerals (e.g., Appendix 1, Appendix 2, etc.). Appendices, Tables, and References appearing in appendices should be numbered and referred to at appropriate places just as in the case of chapters. Appendices shall carry the title of the work reported and the same title shall be made in the contents page also.
+
+#### 3.10. List of References
+The listing of references should be typed 4 spaces below the heading "REFERENCES" in alphabetical order in single spacing, left-justified. The reference material should be listed in the alphabetical order of the first author. The name of the author/authors should be immediately followed by the year and other details.
+
+**Illustrative list given below:**
+1. Barnsd, R.W. and Kellogg, C. (1930), *Problems in Univalent Function Theory*, Michigan Math J., Vol 27, pp. 80-87.
+2. Shin, K.G. and McKay, N.D. (1984), *Loop Minimum Time Control of Mechanical Manipulators and its Applications*, Proc. Amer. Contr. Conf., San Diego, CA, pp. 123-236.
+
+### 4. General Requirements
+The impression on the typed copies should be **black** in color. **One and a half spacing** should be used for typing the general text.
+- **General Text:** Font style Times New Roman, Font size 12.
+- **Chapter Headings and Subheadings:** Font size 14 and **Bold**.
