@@ -6,6 +6,7 @@ Run independently:  python scheduler.py
 """
 
 import json
+import os
 import time
 import logging
 from database import SessionLocal
@@ -25,7 +26,6 @@ ESCALATION_MINUTES = 2
 FAKE_VITALS_ENABLED_SETTING_KEY = "fake_vitals_generation_enabled"
 
 # ── Redis pub/sub publisher (optional) ────────────────────────────────────────
-import os
 _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 _redis_client = None
 

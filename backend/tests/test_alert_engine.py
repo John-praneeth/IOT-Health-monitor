@@ -2,7 +2,8 @@
 tests/test_alert_engine.py  –  Unit tests for the alert threshold engine.
 """
 
-import sys, os
+import os
+import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from alert_engine import check_alerts

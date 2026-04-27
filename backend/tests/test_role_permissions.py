@@ -2,7 +2,6 @@
 tests/test_role_permissions.py  –  Tests for role-based access control.
 """
 
-import pytest
 import models
 import crud
 

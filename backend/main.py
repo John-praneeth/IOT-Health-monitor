@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -19,17 +20,18 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from jose import JWTError, ExpiredSignatureError, jwt
+from jose import JWTError, ExpiredSignatureError
 
 import auth
 import crud
 import data_sources
 import models
+import scheduler
 import schemas
 import whatsapp_notifier
 from database import engine, Base, SessionLocal, require_redis_on_startup, get_redis_client, is_redis_available
 from json_logger import setup_logging, request_id_var, generate_request_id
-from rate_limiter import limiter, setup_rate_limiter
+from rate_limiter import setup_rate_limiter
 from exception_handlers import setup_exception_handlers
 from logger import log_security_event, request_ip, sanitize_headers
 from security_utils import (
@@ -110,8 +112,6 @@ HTTP_REQUESTS_TOTAL = 0
 HTTP_REQUEST_ERRORS_TOTAL = 0
 HTTP_REQUEST_DURATION_SECONDS_SUM = 0.0
 _redis_subscriber_started = False
-import threading
-import scheduler
 
 _redis_subscriber_task: Optional[asyncio.Task] = None
 
@@ -586,7 +586,7 @@ def forgot_password_request(
 
     db.query(models.PasswordResetToken).filter(
         models.PasswordResetToken.user_id == user.user_id,
-        models.PasswordResetToken.used == False,
+        ~models.PasswordResetToken.used,
     ).update({"used": True})
 
     verification_code = f"{secrets.randbelow(1000000):06d}"
@@ -635,7 +635,7 @@ def forgot_password_confirm(
         db.query(models.PasswordResetToken)
         .filter(
             models.PasswordResetToken.user_id == user.user_id,
-            models.PasswordResetToken.used == False,
+            ~models.PasswordResetToken.used,
             models.PasswordResetToken.expires_at > now,
         )
         .order_by(models.PasswordResetToken.created_at.desc())

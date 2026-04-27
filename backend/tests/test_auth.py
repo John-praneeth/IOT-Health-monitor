@@ -2,9 +2,6 @@
 tests/test_auth.py  –  Integration tests for auth endpoints.
 """
 
-import pytest
-
-
 def _admin_headers(client):
     resp = client.post("/auth/login", json={"username": "admin", "password": "Admin123!"})
     assert resp.status_code == 200

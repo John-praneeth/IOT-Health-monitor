@@ -2,7 +2,6 @@
 crud.py  –  Database operations for the Patient Monitor system.
 """
 
-import os
 import logging
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
@@ -366,7 +365,7 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
                 db.query(models.Doctor)
                 .filter(
                     models.Doctor.specialization == specialization,
-                    models.Doctor.is_available == True,
+                    models.Doctor.is_available,
                     models.Doctor.doctor_id != (patient.assigned_doctor or -1),
                     models.Doctor.hospital_id == patient.hospital_id,
                 )
@@ -377,7 +376,7 @@ def escalate_stale_alerts(db: Session, threshold_minutes: int = 2):
                 same_spec_doctors = (
                     db.query(models.Doctor)
                     .filter(
-                        models.Doctor.is_available == True,
+                        models.Doctor.is_available,
                         models.Doctor.doctor_id != (patient.assigned_doctor or -1),
                         models.Doctor.hospital_id == patient.hospital_id,
                     )
@@ -478,7 +477,7 @@ def get_escalations(db: Session, alert_id: int = None, doctor_id: int = None, li
 def get_notifications(db: Session, user_id: int, unread_only: bool = False, limit: int = 50):
     q = db.query(models.AlertNotification).filter(models.AlertNotification.user_id == user_id)
     if unread_only:
-        q = q.filter(models.AlertNotification.is_read == False)
+        q = q.filter(~models.AlertNotification.is_read)
     return q.order_by(models.AlertNotification.created_at.desc()).limit(limit).all()
 
 
@@ -501,7 +500,7 @@ def mark_notification_read(db: Session, notification_id: int, user_id: int):
 def mark_all_notifications_read(db: Session, user_id: int):
     db.query(models.AlertNotification).filter(
         models.AlertNotification.user_id == user_id,
-        models.AlertNotification.is_read == False,
+        ~models.AlertNotification.is_read,
     ).update({"is_read": True})
     db.commit()
 
@@ -530,7 +529,7 @@ def get_patients(
         joinedload(models.Patient.hospital)
     )
     if not include_inactive:
-        q = q.filter(models.Patient.is_active == True)
+        q = q.filter(models.Patient.is_active)
     if doctor_id:
         q = q.filter(models.Patient.assigned_doctor == doctor_id)
     if nurse_id:
@@ -1000,7 +999,7 @@ def get_dashboard_stats(db: Session, current_user: models.User):
         if patient_ids_for_scope:
             sla_q = sla_q.filter(models.SLARecord.patient_id.in_(patient_ids_for_scope))
         
-        sla_breaches = sla_q.filter(models.SLARecord.breached == True).count()
+        sla_breaches = sla_q.filter(models.SLARecord.breached).count()
         avg_resp_row = db.query(func.avg(models.SLARecord.response_time_seconds)).filter(
             models.SLARecord.patient_id.in_(patient_ids_for_scope) if patient_ids_for_scope else True
         ).first()

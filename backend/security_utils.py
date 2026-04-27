@@ -7,7 +7,6 @@ from __future__ import annotations
 import time
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
 import os
 
 from database import get_redis_client

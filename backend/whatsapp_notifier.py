@@ -208,7 +208,7 @@ def get_patient_recipients(patient_id: int) -> list[str]:
             if patient.assigned_doctor:
                 doctor = db.query(m.Doctor).filter(
                     m.Doctor.doctor_id == patient.assigned_doctor,
-                    m.Doctor.is_active == True,
+                    m.Doctor.is_active,
                 ).first()
                 if doctor:
                     phone = _normalize_phone(doctor.phone)
