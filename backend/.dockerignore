@@ -1,0 +1,13 @@
+# ── Backend Docker build exclusions ───────────────────────────────────────────
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.whatsapp_paused
+tests/
+*.db
+.DS_Store

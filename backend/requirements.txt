@@ -1,0 +1,20 @@
+# ── Core ──────────────────────────────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+pydantic
+python-dotenv
+bcrypt
+python-jose[cryptography]
+httpx
+numpy
+
+# ── Rate Limiting ─────────────────────────────────────────────────────────────
+slowapi
+
+# ── Redis (WebSocket pub/sub) ─────────────────────────────────────────────────
+redis
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest

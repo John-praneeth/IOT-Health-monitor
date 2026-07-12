@@ -1,0 +1,48 @@
+const getRuntimeApiBase = () => {
+  if (typeof window === 'undefined') return '';
+  const params = new URLSearchParams(window.location.search);
+  return params.get('api') || '';
+};
+
+const rawApiBase = (getRuntimeApiBase() || process.env.REACT_APP_API_BASE_URL || '').trim();
+const rawWsBase = (process.env.REACT_APP_WS_BASE_URL || '').trim();
+
+const isVercelProdHost =
+  typeof window !== 'undefined' && /(^|\.)iot-healthcare\.vercel\.app$/i.test(window.location.host);
+
+const isLocalDevHost =
+  typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+
+const defaultApiBase = isVercelProdHost
+  ? 'https://iot-healthcare-backend.onrender.com'
+  : (isLocalDevHost ? 'http://localhost:8000' : '/api');
+
+export const API_BASE_URL = rawApiBase || defaultApiBase;
+
+export const API_BASE_LABEL =
+  API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://')
+    ? API_BASE_URL
+    : 'same-origin (/api)';
+
+const normalizeBase = (base) => (base || '').replace(/\/+$/, '');
+
+export const getDocsUrl = () => `${normalizeBase(API_BASE_URL)}/docs`;
+export const getRedocUrl = () => `${normalizeBase(API_BASE_URL)}/redoc`;
+
+export const getWsBaseUrl = () => {
+  if (rawWsBase) return normalizeBase(rawWsBase);
+  if (typeof window === 'undefined') return 'ws://localhost:8000/ws';
+
+  if (isVercelProdHost) {
+    return 'wss://iot-healthcare-backend.onrender.com/ws';
+  }
+
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  if (window.location.port === '3000') {
+    return `${proto}://${window.location.hostname}:8000/ws`;
+  }
+  return `${proto}://${window.location.host}/ws`;
+};
+
+export const buildVitalsWsUrl = (token) =>
+  `${normalizeBase(getWsBaseUrl())}/vitals?token=${encodeURIComponent(token)}`;
