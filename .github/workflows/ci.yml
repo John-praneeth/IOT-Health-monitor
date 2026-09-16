@@ -2,9 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, railway-deploy]
+    branches: [main, railway-deploy, feature/multimodal-ai-engine]
   pull_request:
-    branches: [main]
+    branches: [main, feature/multimodal-ai-engine]
 
 env:
   REGISTRY: ghcr.io
@@ -78,7 +78,7 @@ jobs:
   build-images:
     needs: [test-backend, test-frontend]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/railway-deploy'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/railway-deploy' || github.ref == 'refs/heads/feature/multimodal-ai-engine'
     permissions:
       contents: read
       packages: write

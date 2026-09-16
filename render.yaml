@@ -1,0 +1,89 @@
+## render.yaml — IoT Healthcare Patient Monitor
+## Deploys: PostgreSQL DB + FastAPI backend web service
+
+databases:
+  - name: iot-healthcare-db
+    databaseName: patient_monitor
+    user: iot_user
+    plan: free
+    region: oregon
+
+services:
+  - type: web
+    name: iot-healthcare-backend
+    region: oregon
+    plan: free
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    branch: feature/multimodal-ai-engine
+    healthCheckPath: /health
+    autoDeploy: true
+
+    envVars:
+      # ── Database (auto-linked from above DB) ──────────────────────────────────
+      - key: DATABASE_URL
+        fromDatabase:
+          name: iot-healthcare-db
+          property: connectionString
+
+      # ── JWT / Auth ────────────────────────────────────────────────────────────
+      - key: SECRET_KEY
+        sync: false
+
+      - key: ADMIN_PASSWORD
+        sync: false
+
+      - key: ADMIN_USERNAME
+        value: admin
+
+      # ── App Runtime ───────────────────────────────────────────────────────────
+      - key: DATA_SOURCE
+        value: fake
+
+      - key: ENVIRONMENT
+        value: production
+
+      - key: SEED_DB_ON_STARTUP
+        value: "true"
+
+      - key: PORT
+        value: "8000"
+
+      # ── CORS — allow Vercel domain ─────────────────────────────────────────────
+      - key: CORS_ORIGINS
+        value: https://iot-healthcare.vercel.app,https://iot-healthcare-john-praneeth.vercel.app,http://localhost:3000
+
+      # ── Redis (optional — disabled on free tier) ──────────────────────────────
+      - key: REDIS_REQUIRED
+        value: "false"
+
+      # ── WhatsApp (disabled by default) ────────────────────────────────────────
+      - key: WHATSAPP_ENABLED
+        value: "false"
+
+      # ── Logging ───────────────────────────────────────────────────────────────
+      - key: LOG_LEVEL
+        value: INFO
+
+      - key: SERVICE_NAME
+        value: iot-healthcare
+
+      # ── Limits ────────────────────────────────────────────────────────────────
+      - key: MAX_ALERTS_PER_MINUTE
+        value: "20"
+
+      - key: VITALS_RETENTION_DAYS
+        value: "30"
+
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "30"
+
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "7"
+
+      - key: WS_CONNECTION_LIMIT
+        value: "50"
+
+      - key: COOKIE_SECURE
+        value: "true"
