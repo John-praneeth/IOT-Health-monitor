@@ -1015,6 +1015,7 @@ def get_dashboard_stats(db: Session, current_user: models.User):
         pending_alerts=alert_q.filter(models.Alert.status == "PENDING").count(),
         escalated_alerts=alert_q.filter(models.Alert.status == "ESCALATED").count(),
         acknowledged_alerts=alert_q.filter(models.Alert.status == "ACKNOWLEDGED").count(),
+        resolved_alerts=alert_q.filter(models.Alert.status == "RESOLVED").count(),
         duplicate_vitals_count=_duplicate_vitals_count_for_patients(db, patient_ids_for_scope, source=source_name),
         avg_response_time_seconds=avg_resp,
         sla_breach_count=sla_breaches

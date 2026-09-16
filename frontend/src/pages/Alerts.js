@@ -8,7 +8,7 @@ export default function Alerts() {
   const [alerts,      setAlerts]      = useState([]);
   const [patients,    setPatients]    = useState([]);
   const [doctors,     setDoctors]     = useState([]);
-  const [filter,      setFilter]      = useState('');      // '' | 'PENDING' | 'ACKNOWLEDGED' | 'ESCALATED'
+  const [filter,      setFilter]      = useState('');      // '' | 'PENDING' | 'ESCALATED' | 'ACKNOWLEDGED' | 'RESOLVED'
   const [doctorFilter, setDoctorFilter] = useState('');    // doctor_id
   const [loading,     setLoading]     = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
@@ -89,12 +89,13 @@ export default function Alerts() {
     if (status === 'PENDING')      return <span className="badge badge-amber">PENDING</span>;
     if (status === 'ESCALATED')    return <span className="badge badge-red">🔺 ESCALATED</span>;
     if (status === 'ACKNOWLEDGED') return <span className="badge badge-green">ACKNOWLEDGED</span>;
+    if (status === 'RESOLVED')     return <span className="badge badge-slate">RESOLVED</span>;
     return <span className="badge">{status}</span>;
   };
 
   const pending = alertStats?.pending_alerts ?? alerts.filter(a => a.status === 'PENDING').length;
   const escalated = alertStats?.escalated_alerts ?? alerts.filter(a => a.status === 'ESCALATED').length;
-  const acknowledged = alertStats?.acknowledged_alerts ?? alerts.filter(a => a.status === 'ACKNOWLEDGED').length;
+  const resolved = alertStats?.resolved_alerts ?? alerts.filter(a => a.status === 'RESOLVED').length;
 
   return (
     <div style={{ animation: 'reveal 0.4s ease-out' }}>
@@ -128,7 +129,7 @@ export default function Alerts() {
         </div>
         <div className="stat-card green">
           <div className="label">Resolved Events</div>
-          <div className="value">{acknowledged}</div>
+          <div className="value">{resolved}</div>
         </div>
         <div className="stat-card blue">
           <div className="label">Total Registry</div>
@@ -138,7 +139,7 @@ export default function Alerts() {
 
       <div className="filter-row" style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: 4, background: 'rgba(0,0,0,0.2)', padding: 4, borderRadius: 10, border: '1px solid var(--stroke)' }}>
-          {['', 'PENDING', 'ESCALATED', 'ACKNOWLEDGED'].map(s => (
+          {['', 'PENDING', 'ESCALATED', 'ACKNOWLEDGED', 'RESOLVED'].map(s => (
             <button
               key={s}
               className={`btn btn-sm`}

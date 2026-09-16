@@ -336,6 +336,7 @@ class DashboardStats(ProjectBaseModel):
     pending_alerts: int
     escalated_alerts: int
     acknowledged_alerts: int
+    resolved_alerts: int = 0
     duplicate_vitals_count: int = 0
     avg_response_time_seconds: Optional[float] = 0
     sla_breach_count: int = 0
