@@ -103,14 +103,10 @@ export default function App() {
             <NavLink to="/vitals" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>💓 Vitals Feed</NavLink>
             <NavLink to="/alerts" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🚨 Active Alerts</NavLink>
             <NavLink to="/ai-diagnostics" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🧠 AI Engine</NavLink>
-            {user.role === 'ADMIN' && (
-              <>
-                <NavLink to="/hospitals" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🏢 Hospitals</NavLink>
-                <NavLink to="/whatsapp" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>📱 WhatsApp</NavLink>
-                <NavLink to="/status" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🖥️ System</NavLink>
-                <NavLink to="/audit-logs" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>📋 Audit Logs</NavLink>
-              </>
-            )}
+            <NavLink to="/hospitals" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🏢 Hospitals</NavLink>
+            <NavLink to="/whatsapp" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>📱 WhatsApp</NavLink>
+            <NavLink to="/status" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>🖥️ System</NavLink>
+            <NavLink to="/audit-logs" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'} onClick={() => setSidebarOpen(false)}>📋 Audit Logs</NavLink>
           </nav>
 
           <div className="sidebar-user">
