@@ -35,6 +35,8 @@ TestSession = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 @pytest.fixture(autouse=True)
 def setup_db():
     """Create all tables before each test, drop after."""
+    database.engine = test_engine
+    database.SessionLocal = TestSession
     database.REDIS_URL = "redis://127.0.0.1:63999/0"
     database._redis_client = None
     database._redis_available = False

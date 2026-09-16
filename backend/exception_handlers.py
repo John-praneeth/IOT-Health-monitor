@@ -84,9 +84,10 @@ def setup_exception_handlers(app: FastAPI):
 
     @app.exception_handler(SQLAlchemyError)
     async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
+        method = getattr(request, "method", "WS")
         logger.error(
             "Database error: %s %s – %s",
-            request.method, request.url.path, str(exc),
+            method, request.url.path, str(exc),
             exc_info=True,
             extra={"action": "database_error"},
         )
