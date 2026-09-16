@@ -1,5 +1,5 @@
 ## render.yaml — IoT Healthcare Patient Monitor
-## Deploys: PostgreSQL DB + FastAPI backend web service
+## Deploys: PostgreSQL DB + FastAPI backend web service + React static frontend
 
 databases:
   - name: iot-healthcare-db
@@ -50,9 +50,9 @@ services:
       - key: PORT
         value: "8000"
 
-      # ── CORS — allow Vercel domain ─────────────────────────────────────────────
+      # ── CORS — allow the Render frontend origin ───────────────────────────────
       - key: CORS_ORIGINS
-        value: https://iot-healthcare.vercel.app,https://iot-healthcare-john-praneeth.vercel.app,http://localhost:3000
+        value: https://iot-healthcare-frontend.onrender.com,http://localhost:3000
 
       # ── Redis (optional — disabled on free tier) ──────────────────────────────
       - key: REDIS_REQUIRED
@@ -87,3 +87,27 @@ services:
 
       - key: COOKIE_SECURE
         value: "true"
+
+  # ── Frontend (React static site) ──────────────────────────────────────────
+  # CRA bakes REACT_APP_* into the bundle at build time. Without these the app
+  # falls back to same-origin '/api', which a static site cannot serve.
+  - type: web
+    name: iot-healthcare-frontend
+    runtime: static
+    branch: feature/multimodal-ai-engine
+    rootDir: frontend
+    buildCommand: npm install --legacy-peer-deps && npm run build
+    staticPublishPath: build
+    autoDeploy: true
+
+    envVars:
+      - key: REACT_APP_API_BASE_URL
+        value: https://iot-healthcare-backend.onrender.com
+      - key: REACT_APP_WS_BASE_URL
+        value: wss://iot-healthcare-backend.onrender.com/ws
+
+    # SPA fallback — react-router paths (/patients, /alerts, …) must serve index.html
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

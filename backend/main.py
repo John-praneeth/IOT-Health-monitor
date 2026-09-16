@@ -167,8 +167,8 @@ mandatory_origins = [
     "http://localhost",
     "http://localhost:3000",
     "http://localhost:5173",
-    "https://iot-healthcare.vercel.app",
-    "https://iot-healthcare.vercel.app/",
+    "https://iot-healthcare-frontend.onrender.com",
+    "https://iot-healthcare-frontend.onrender.com/",
     "https://iot-healthcare-backend.onrender.com",
     "https://iot-healthcare-backend.onrender.com/",
 ]

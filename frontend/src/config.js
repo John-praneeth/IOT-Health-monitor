@@ -7,14 +7,19 @@ const getRuntimeApiBase = () => {
 const rawApiBase = (getRuntimeApiBase() || process.env.REACT_APP_API_BASE_URL || '').trim();
 const rawWsBase = (process.env.REACT_APP_WS_BASE_URL || '').trim();
 
-const isVercelProdHost =
-  typeof window !== 'undefined' && /(^|\.)iot-healthcare\.vercel\.app$/i.test(window.location.host);
+const RENDER_BACKEND_HTTP = 'https://iot-healthcare-backend.onrender.com';
+const RENDER_BACKEND_WS = 'wss://iot-healthcare-backend.onrender.com/ws';
+
+// Render static site (frontend) — the backend lives on its own *.onrender.com host,
+// so same-origin '/api' can never work there.
+const isHostedProd =
+  typeof window !== 'undefined' && /(^|\.)iot-healthcare-frontend\.onrender\.com$/i.test(window.location.host);
 
 const isLocalDevHost =
   typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
 
-const defaultApiBase = isVercelProdHost
-  ? 'https://iot-healthcare-backend.onrender.com'
+const defaultApiBase = isHostedProd
+  ? RENDER_BACKEND_HTTP
   : (isLocalDevHost ? 'http://localhost:8000' : '/api');
 
 export const API_BASE_URL = rawApiBase || defaultApiBase;
@@ -33,8 +38,8 @@ export const getWsBaseUrl = () => {
   if (rawWsBase) return normalizeBase(rawWsBase);
   if (typeof window === 'undefined') return 'ws://localhost:8000/ws';
 
-  if (isVercelProdHost) {
-    return 'wss://iot-healthcare-backend.onrender.com/ws';
+  if (isHostedProd) {
+    return RENDER_BACKEND_WS;
   }
 
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
